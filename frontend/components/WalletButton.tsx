@@ -1,30 +1,33 @@
 "use client";
 
 import { useState } from "react";
-import { requestAccess, getAddress, isConnected } from "@stellar/freighter-api";
+import { requestAccess } from "@stellar/freighter-api";
 
 export default function WalletButton({
   wallet,
   onConnect,
+  onOpenModal,
 }: {
   wallet: string | null;
   onConnect: (addr: string | null) => void;
+  onOpenModal: () => void;
 }) {
   const [loading, setLoading] = useState(false);
 
   const handleConnect = async () => {
+    if (wallet) {
+      onConnect(null);
+      return;
+    }
     setLoading(true);
     try {
-      if (wallet) {
-        onConnect(null);
-      } else {
-        const result = await requestAccess();
-        if (result.address) {
-          onConnect(result.address);
-        }
+      const result = await requestAccess();
+      if (result.address) {
+        onConnect(result.address);
       }
     } catch (err) {
       console.error("Freighter error:", err);
+      onOpenModal();
     } finally {
       setLoading(false);
     }
@@ -32,13 +35,22 @@ export default function WalletButton({
 
   if (wallet) {
     return (
-      <button
-        onClick={handleConnect}
-        className="flex items-center gap-2 rounded-xl border border-primary/30 bg-primary/10 px-4 py-2 text-sm font-semibold text-primary transition-all hover:bg-primary/20"
-      >
-        <span className="material-symbols-rounded text-[18px]">account_circle</span>
-        {wallet.slice(0, 4)}...{wallet.slice(-4)}
-      </button>
+      <div className="flex items-center gap-3">
+        <button
+          onClick={handleConnect}
+          className="h-10 px-5 rounded-lg border border-emerald-200 bg-emerald-50 text-emerald-700 text-[13px] font-semibold shadow-sm transition-all hover:bg-emerald-100 flex items-center gap-2"
+        >
+          <span className="material-symbols-outlined text-[18px]">
+            account_circle
+          </span>
+          {wallet.slice(0, 4)}...{wallet.slice(-4)}
+        </button>
+        <div className="w-8 h-8 rounded-full bg-emerald-100 border border-emerald-200 flex items-center justify-center">
+          <span className="material-symbols-outlined text-emerald-700 text-[18px]">
+            person
+          </span>
+        </div>
+      </div>
     );
   }
 
@@ -46,10 +58,12 @@ export default function WalletButton({
     <button
       onClick={handleConnect}
       disabled={loading}
-      className="flex items-center gap-2 rounded-xl bg-primary px-5 py-2.5 text-sm font-semibold text-white shadow-md shadow-primary/20 transition-all hover:bg-primary-light hover:shadow-lg hover:shadow-primary/30 disabled:opacity-50"
+      className="h-10 px-6 rounded-lg bg-secondary text-white text-[13px] font-semibold shadow-md shadow-orange-500/20 hover:bg-orange-600 transition-all flex items-center gap-2 disabled:opacity-50"
     >
-      <span className="material-symbols-rounded text-[18px]">wallet</span>
-      {loading ? "Conectando..." : "Conectar Freighter"}
+      <span>{loading ? "Conectando..." : "Conectar Wallet"}</span>
+      <span className="material-symbols-outlined text-[18px]">
+        account_balance_wallet
+      </span>
     </button>
   );
 }

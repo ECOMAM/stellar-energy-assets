@@ -1,10 +1,12 @@
 @import "tailwindcss";
 
 @theme {
-  --font-display: "Geist", "Inter", system-ui, sans-serif;
-  --font-body: "Inter", system-ui, sans-serif;
+  /* ── Fonts ── */
+  --font-display: "Space Grotesk", "Inter", system-ui, sans-serif;
+  --font-body: "Hanken Grotesk", "Inter", system-ui, sans-serif;
   --font-mono: "JetBrains Mono", "Fira Code", monospace;
 
+  /* ── Core Palette ── */
   --color-primary: #059669;
   --color-primary-light: #10b981;
   --color-primary-dark: #047857;
@@ -13,28 +15,82 @@
   --color-tertiary: #d97706;
   --color-tertiary-light: #f59e0b;
 
-  --color-surface: #ffffff;
-  --color-surface-dim: #f8fafc;
-  --color-surface-bright: #f0fdf4;
+  /* ── Surface System ── */
+  --color-surface: #f8fafc;
+  --color-surface-dim: #f1f5f9;
+  --color-surface-bright: #ffffff;
+  --color-surface-container: #f0fdf4;
+  --color-surface-container-low: #f1f5f9;
+  --color-surface-container-high: #e6faec;
+  --color-surface-container-highest: #dcfce7;
+  --color-surface-variant: #e2f9e7;
+
+  /* ── Semantic ── */
   --color-background: #f8fafc;
   --color-foreground: #0f172a;
   --color-muted: #64748b;
   --color-border: #e2e8f0;
+  --color-outline: #94a3b8;
+  --color-outline-variant: #cbd5e1;
+
+  /* ── Material Design 3 Extended ── */
+  --color-on-primary: #ffffff;
+  --color-on-primary-container: #ffffff;
+  --color-on-surface: #0f172a;
+  --color-on-surface-variant: #475569;
+  --color-on-secondary: #ffffff;
+  --color-on-tertiary: #ffffff;
+  --color-on-background: #0f172a;
+  --color-on-error: #ffffff;
+
+  --color-error: #ba1a1a;
+  --color-error-container: #ffdad6;
+  --color-on-error-container: #93000a;
+
+  --color-inverse-surface: #00391a;
+  --color-inverse-on-surface: #c3ffce;
+  --color-inverse-primary: #68dba9;
+
+  --color-primary-fixed: #85f8c4;
+  --color-primary-fixed-dim: #68dba9;
+  --color-secondary-fixed: #ffedd5;
+  --color-secondary-fixed-dim: #ffb77d;
+  --color-tertiary-fixed: #ffdbce;
+  --color-tertiary-fixed-dim: #ffb599;
+
+  --color-surface-tint: #006c4a;
 }
 
 @layer base {
-  * {
-    box-sizing: border-box;
+  html,
+  body {
+    margin: 0;
+    padding: 0;
   }
   body {
+    overscroll-behavior: none;
     font-family: var(--font-body);
     background-color: var(--color-background);
     color: var(--color-foreground);
   }
+  main > :first-child {
+    margin-top: 0 !important;
+  }
+  main > :last-child {
+    margin-bottom: 0 !important;
+  }
+  * {
+    box-sizing: border-box;
+  }
 }
 
-/* Material Symbols */
-.material-symbols-rounded {
+/* Hide scrollbar */
+::-webkit-scrollbar {
+  display: none;
+}
+
+/* ── Material Symbols (Outlined) ── */
+.material-symbols-outlined {
   font-variation-settings:
     "FILL" 0,
     "wght" 400,
@@ -42,27 +98,43 @@
     "opsz" 24;
 }
 
-/* Glass morphism utility */
-.glass {
-  background: rgba(255, 255, 255, 0.85);
-  backdrop-filter: blur(12px);
-  border: 1px solid rgba(226, 232, 240, 0.5);
+/* ── Selection ── */
+::selection {
+  background-color: var(--color-primary-fixed-dim);
+  color: var(--color-on-primary-fixed);
 }
 
-/* Chart bar animation */
+/* ── Glass morphism utility ── */
+.glass {
+  background: rgba(255, 255, 255, 0.9);
+  backdrop-filter: blur(16px);
+  border: 1px solid rgba(226, 232, 240, 0.8);
+}
+
+/* ── Chart bar animation ── */
 @keyframes barGrow {
-  from { transform: scaleY(0); }
-  to { transform: scaleY(1); }
+  from {
+    transform: scaleY(0);
+  }
+  to {
+    transform: scaleY(1);
+  }
 }
 .chart-bar {
   animation: barGrow 0.8s ease-out forwards;
   transform-origin: bottom;
 }
 
-/* Toast animation */
+/* ── Toast animation ── */
 @keyframes slideUp {
-  from { transform: translateY(20px); opacity: 0; }
-  to { transform: translateY(0); opacity: 1; }
+  from {
+    transform: translateY(20px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
 }
 .toast {
   animation: slideUp 0.3s ease-out;
