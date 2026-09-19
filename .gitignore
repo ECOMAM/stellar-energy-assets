@@ -1,0 +1,9 @@
+node_modules/
+.next/
+out/
+target/
+*.wasm
+.env.local
+.env
+.DS_Store
+pnpm-lock.yaml
