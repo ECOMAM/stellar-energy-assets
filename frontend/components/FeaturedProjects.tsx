@@ -171,12 +171,15 @@ export default function FeaturedProjects() {
               </div>
 
               {/* CTA */}
-              <button className="w-full h-11 rounded-lg bg-secondary text-white text-[13px] font-semibold shadow-md shadow-orange-500/20 hover:bg-orange-600 transition-all flex items-center justify-center gap-2">
+              <a
+                href={`/project/${p.id}`}
+                className="w-full h-11 rounded-lg bg-secondary text-white text-[13px] font-semibold shadow-md shadow-orange-500/20 hover:bg-orange-600 transition-all flex items-center justify-center gap-2"
+              >
                 <span>Invertir Ahora</span>
                 <span className="material-symbols-outlined text-[18px]">
                   bolt
                 </span>
-              </button>
+              </a>
             </div>
           </div>
         ))}
