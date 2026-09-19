@@ -13,13 +13,6 @@ import {
   requestAccess,
   signTransaction,
 } from "@stellar/freighter-api";
-import * as SorobanRpc from "@stellar/stellar-sdk/rpc";
-import {
-  Address,
-  Contract,
-  TransactionBuilder,
-  Transaction,
-} from "@stellar/stellar-sdk";
 
 const SERVER_URL =
   process.env.NEXT_PUBLIC_STELLAR_RPC_URL ||
@@ -59,6 +52,7 @@ export function useWallet() {
 }
 
 export function WalletProvider({ children }: { children: React.ReactNode }) {
+  const [mounted, setMounted] = useState(false);
   const [state, setState] = useState<WalletState>({
     address: null,
     balance: "0",
@@ -68,15 +62,18 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     connecting: false,
   });
 
+  // Mark as mounted on client only
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
   const fetchBalance = useCallback(async () => {
     if (!state.address) return;
     try {
       const HORIZON_URL =
         process.env.NEXT_PUBLIC_STELLAR_HORIZON_URL ||
         "https://horizon-testnet.stellar.org";
-      const res = await fetch(
-        `${HORIZON_URL}/accounts/${state.address}`
-      );
+      const res = await fetch(`${HORIZON_URL}/accounts/${state.address}`);
       if (!res.ok) return;
       const data = await res.json();
       const native = data.balances?.find(
@@ -144,24 +141,26 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     ) => {
       if (!state.address) throw new Error("Wallet not connected");
 
+      // Lazy-load Stellar SDK — it uses BigInt internally which crashes SSR.
+      // Dynamic import ensures it only loads on the client.
+      const sdk = await import("@stellar/stellar-sdk");
+      const SorobanRpc = await import("@stellar/stellar-sdk/rpc");
+
       const server = new SorobanRpc.Server(SERVER_URL);
-      const contract = new Contract(contractId);
+      const contract = new sdk.Contract(contractId);
       const account = await server.getAccount(state.address);
 
       // Convert Stellar address strings to ScVal for Soroban contract calls
-      // contract.call() cannot auto-serialize Address instances — we must
-      // explicitly call .toScVal() so the XDR writer receives a proper ScVal.
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const sorobanArgs = args.map((a: any) => {
+      const sorobanArgs = args.map((a: unknown) => {
         if (typeof a === "string" && /^[GC][A-Z0-9]{55}$/.test(a)) {
-          return Address.fromString(a).toScVal();
+          return sdk.Address.fromString(a).toScVal();
         }
         return a;
       });
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const builtTx = contract.call(method, ...(sorobanArgs as any[]));
-      const tx = new TransactionBuilder(account, {
+      const tx = new sdk.TransactionBuilder(account, {
         fee: "100000",
         networkPassphrase: PASSPHRASE,
       })
@@ -169,7 +168,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         .setTimeout(180)
         .build();
 
-      let preparedTx = await server.prepareTransaction(tx);
+      const preparedTx = await server.prepareTransaction(tx);
       const txXdr = preparedTx.toXDR();
 
       const signed = await signTransaction(txXdr, {
@@ -177,18 +176,20 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         address: signWith || state.address,
       });
 
-      const signedTx = TransactionBuilder.fromXDR(
+      const signedTx = sdk.TransactionBuilder.fromXDR(
         signed.signedTxXdr,
         PASSPHRASE
       );
       const response = await server.sendTransaction(signedTx);
 
       if (response.status === "ERROR") {
-        // Stellar SDK errorResult contains BigInt values that JSON.stringify can't handle
+        // Stellar SDK errorResult contains BigInt — serialize safely
         let errMsg: string;
         try {
-          errMsg = JSON.stringify(response.errorResult, (_key, value) =>
-            typeof value === "bigint" ? value.toString() : value
+          errMsg = JSON.stringify(
+            response.errorResult,
+            (_key, value) =>
+              typeof value === "bigint" ? value.toString() : value
           );
         } catch {
           errMsg = String(response.errorResult);
@@ -217,8 +218,9 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     [state.address]
   );
 
-  // Auto-reconnect on mount
+  // Auto-reconnect on mount (client-only)
   useEffect(() => {
+    if (!mounted) return;
     (async () => {
       try {
         const connected = await isConnected();
@@ -237,12 +239,12 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         // Freighter not available
       }
     })();
-  }, []);
+  }, [mounted]);
 
-  // Fetch balance when address changes
+  // Fetch balance when address changes (client-only)
   useEffect(() => {
-    if (state.address) fetchBalance();
-  }, [state.address, fetchBalance]);
+    if (mounted && state.address) fetchBalance();
+  }, [mounted, state.address, fetchBalance]);
 
   return (
     <WalletContext.Provider
