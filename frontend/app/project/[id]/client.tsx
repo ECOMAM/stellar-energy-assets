@@ -1,419 +1,945 @@
 "use client";
 
 import { useState } from "react";
+import { useWallet } from "@/lib/WalletContext";
 
-const mockProject = {
-  id: 1,
-  name: "Solar Lima — Miraflores",
-  location: "Lima, Perú",
-  power: "720 kW",
-  investors: 45,
-  funding: 67,
-  annualReturn: "6.2%",
-  status: "Activo",
-  irr: "8.4%",
-  pricePerToken: "100 XLM",
-  totalSupply: 1000,
-  minted: 670,
-  todayEnergy: 42.3,
-  monthEnergy: 1280,
-  co2Avoided: 1.82,
-  uptime: 98.7,
-  peakPower: 685,
-  irradiance: 820,
-  temperature: 31.2,
-  humidity: 62,
+/* ──────────────────── Constants ──────────────────── */
+
+const PROJECT = {
+  contractId:
+    "CDVT6PV536ALTEEXCAVWASGUOG5PHUJCA2WTVWYPZI5Z5KKTECCL6GY4",
+  name: "Parque Solar Lima Norte",
+  flag: "\uD83C\uDDF5\uD83C\uDDF7",
+  slug: "lima-norte",
+  location: "Comas / Los Olivos, Lima",
+  coords: "-11.9561, -77.0537",
+  capacityKwp: 150,
+  apy: 12.5,
+  pricePerToken: 10, // XLM
+  tokenWp: 1.5, // 1 token = 1.5 Wp
+  monthlyProductionKwh: 45200, // 45.2 MWh
+  co2Tons: 32.4,
+  fundingPct: 85,
+  totalSupply: 100_000,
+  soldSupply: 85_000,
+  sunarpPartida: "14829104",
+  inyeccionLinea: "L\u00EDnea MT 10 kV ENEL",
+  assetId: "SLN-RWA-01",
+  ppaYears: 10,
+  heroImage:
+    "https://images.unsplash.com/photo-1509391366360-2e959784a276?w=800&h=500&fit=crop",
 };
 
+const XLM_TO_USD = 0.13;
+
+const DIVIDENDS = [
+  {
+    fecha: "Sep 2026",
+    kwh: "4,520",
+    total: "4,250 XLM",
+    rendimiento: "0.05 XLM/token",
+    hash: "a3f8...9c2d",
+  },
+  {
+    fecha: "Ago 2026",
+    kwh: "4,310",
+    total: "3,980 XLM",
+    rendimiento: "0.047 XLM/token",
+    hash: "b7e1...4f8a",
+  },
+  {
+    fecha: "Jul 2026",
+    kwh: "3,980",
+    total: "3,620 XLM",
+    rendimiento: "0.043 XLM/token",
+    hash: "c2d9...7b3e",
+  },
+];
+
+const LEGAL_DOCS = [
+  { name: "PPA 10 A\u00F1os", icon: "description", ext: "pdf" },
+  { name: "Contrato de Usufructo", icon: "gavel", ext: "pdf" },
+  { name: "Dictamen T\u00E9cnico DNV", icon: "verified", ext: "pdf" },
+  { name: "Certificado SUNARP", icon: "workspace_premium", ext: "pdf" },
+];
+
+/* ──────────────────── Helpers ──────────────────── */
+
+function fmt(n: number, decimals = 2) {
+  return n.toLocaleString("en-US", {
+    minimumFractionDigits: decimals,
+    maximumFractionDigits: decimals,
+  });
+}
+
+function shortAddr(a: string) {
+  if (!a) return "";
+  return a.slice(0, 6) + "..." + a.slice(-4);
+}
+
+/* ──────────────────── Component ──────────────────── */
+
 export default function ProjectDetailClient() {
-  const [activeTab, setActiveTab] = useState<"overview" | "iot" | "legal">(
-    "overview"
-  );
-  const [purchaseAmount, setPurchaseAmount] = useState("10");
-  const p = mockProject;
-  const totalCost = parseInt(purchaseAmount || "0") * 100;
+  const { connected, address, balance, signAndSend, connect } = useWallet();
+
+  /* ── Investment calculator state ── */
+  const [currency, setCurrency] = useState<"XLM" | "USDC">("XLM");
+  const [tokenCount, setTokenCount] = useState<number>(1);
+  const [txResult, setTxResult] = useState<{
+    status: "success" | "error";
+    hash: string;
+    message: string;
+  } | null>(null);
+  const [buying, setBuying] = useState(false);
+
+  /* ── IoT telemetry tab ── */
+  const [telemetryTab, setTelemetryTab] = useState<"Hoy" | "7 D\u00EDas" | "Este Mes" | "Hist\u00F3rico">("Hoy");
+
+  /* ── Derived calculations ── */
+  const pricePerToken = PROJECT.pricePerToken; // XLM
+  const costXlm = tokenCount * pricePerToken;
+  const costUsd = costXlm * XLM_TO_USD;
+  const capacityAdjudicada = tokenCount * PROJECT.tokenWp;
+  const retornoDiario = (costXlm * PROJECT.apy) / 365;
+  const retornoAnual = costXlm * (PROJECT.apy / 100);
+  const co2Mitigado = tokenCount * 0.32; // ~0.32 ton CO2 per token per year
+
+  /* ── Handle buy ── */
+  async function handleBuy() {
+    if (!connected) {
+      connect();
+      return;
+    }
+    setTxResult(null);
+    setBuying(true);
+    try {
+      const paymentStroops = BigInt(
+        Math.round(tokenCount * pricePerToken * 1_000_000)
+      );
+      const { txHash } = await signAndSend(
+        PROJECT.contractId,
+        "purchase_tokens",
+        [address, BigInt(1), BigInt(tokenCount), paymentStroops]
+      );
+      setTxResult({
+        status: "success",
+        hash: txHash,
+        message: `Tokens comprados. Tx: ${shortAddr(txHash)}`,
+      });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setTxResult({ status: "error", hash: "", message: msg });
+    } finally {
+      setBuying(false);
+    }
+  }
+
+  /* ── SVG solar curve data ── */
+  const solarPoints = [
+    0, 12, 35, 62, 85, 100, 110, 115, 118, 118, 114, 105, 92, 74, 52, 30,
+    14, 0,
+  ];
 
   return (
-    <div className="min-h-screen bg-surface">
-      {/* Header */}
-      <header className="fixed top-0 left-0 right-0 z-50 bg-white/90 backdrop-blur-xl border-b border-slate-200/80 shadow-sm">
-        <div className="h-16 max-w-7xl mx-auto px-5 lg:px-10 flex items-center justify-between">
+    <div className="relative min-h-screen bg-slate-50 font-body text-slate-900">
+      {/* ═══════════ A) Ambient glow background ═══════════ */}
+      <div className="pointer-events-none fixed inset-0 -z-10 overflow-hidden">
+        <div className="absolute -top-40 left-1/4 h-[600px] w-[900px] rounded-full bg-gradient-to-br from-emerald-200/25 via-emerald-100/15 to-transparent blur-[160px]" />
+        <div className="absolute top-1/3 -right-20 h-[500px] w-[500px] rounded-full bg-gradient-to-br from-orange-200/20 via-amber-100/10 to-transparent blur-[140px]" />
+        <div className="absolute bottom-0 left-1/2 h-[400px] w-[800px] -translate-x-1/2 rounded-full bg-gradient-to-t from-emerald-100/20 to-transparent blur-[120px]" />
+      </div>
+
+      {/* ═══════════ B) Fixed header ═══════════ */}
+      <header className="fixed top-0 left-0 right-0 z-50 border-b border-slate-200/70 bg-white/85 backdrop-blur-xl shadow-sm">
+        <div className="mx-auto flex h-14 max-w-7xl items-center justify-between px-5 lg:px-10">
           <a
             href="/"
-            className="flex items-center gap-2 text-[13px] font-medium text-slate-500 hover:text-slate-900 transition-colors"
+            className="flex items-center gap-2 text-[13px] font-medium text-slate-500 transition-colors hover:text-slate-900"
           >
             <span className="material-symbols-outlined text-[18px]">
               arrow_back
             </span>
-            Volver
+            Volver al Directorio
           </a>
-          <span
-            className={`inline-flex items-center gap-1 rounded-full px-3 py-1 text-[11px] font-semibold ${
-              p.status === "Activo"
-                ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
-                : "bg-amber-50 text-amber-700 border border-amber-200"
-            }`}
-          >
-            <span className="h-1.5 w-1.5 rounded-full bg-current" />
-            {p.status}
-          </span>
+
+          <div className="flex items-center gap-3">
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-[11px] font-semibold text-emerald-700">
+              <span className="relative flex h-1.5 w-1.5">
+                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-500 opacity-75" />
+                <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-emerald-600" />
+              </span>
+              En Operaci\u00F3n Comercial (PPA 10 A\u00F1os)
+            </span>
+            <span className="font-mono text-[11px] text-slate-400">
+              Stellar Testnet
+            </span>
+          </div>
         </div>
       </header>
 
-      <main className="mx-auto max-w-7xl px-5 lg:px-10 pt-24 pb-16">
-        {/* Title */}
+      {/* ═══════════ Main ═══════════ */}
+      <main className="mx-auto max-w-7xl px-5 lg:px-10 pt-20 pb-20">
+        {/* ═══════════ C) Breadcrumb ═══════════ */}
+        <nav className="mb-6 flex items-center gap-2 text-[13px] text-slate-500">
+          <a href="/" className="hover:text-slate-900 transition-colors">
+            Proyectos Solares
+          </a>
+          <span className="material-symbols-outlined text-[14px]">
+            chevron_right
+          </span>
+          <span>Per&uacute;</span>
+          <span className="material-symbols-outlined text-[14px]">
+            chevron_right
+          </span>
+          <span className="font-medium text-slate-900">
+            Lima Norte (150 kWp)
+          </span>
+          <span className="ml-2 inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold text-emerald-700">
+            <span className="h-1 w-1 rounded-full bg-emerald-500 animate-pulse" />
+            IoT Oracle Activo
+          </span>
+        </nav>
+
+        {/* ═══════════ D) Project header ═══════════ */}
         <div className="mb-8">
-          <div className="mb-2 flex items-center gap-2 text-[13px] text-slate-500">
-            <span className="material-symbols-outlined text-[16px]">
-              location_on
+          <div className="mb-3 flex flex-wrap items-center gap-2">
+            <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-0.5 text-[11px] font-semibold text-emerald-700">
+              PPA Activo &mdash; 10 A&ntilde;os
             </span>
-            {p.location}
+            <span className="inline-flex items-center gap-1 rounded-full border border-blue-200 bg-blue-50 px-2.5 py-0.5 text-[11px] font-semibold text-blue-700">
+              <span className="material-symbols-outlined text-[12px]">
+                verified
+              </span>
+              Auditor&iacute;a Legal Verificada
+            </span>
+            <span className="font-mono text-[11px] text-slate-400">
+              Asset ID: {PROJECT.assetId}
+            </span>
           </div>
-          <h1 className="mb-2 font-display text-[32px] font-bold text-slate-900">
-            {p.name}
+
+          <h1 className="font-display text-[32px] font-bold leading-tight text-slate-900 lg:text-[42px]">
+            {PROJECT.name} {PROJECT.flag}
           </h1>
-          <p className="text-[14px] text-slate-600">
-            Proyecto de energía solar tokenizado en Stellar
+          <p className="mt-2 max-w-2xl text-[14px] leading-relaxed text-slate-600">
+            Parque solar fotovoltaico de 150 kWp en Lima Norte, con Power
+            Purchase Agreement (PPA) a 10 a&ntilde;os. Producci&oacute;n verificada por IoT
+            en tiempo real, dividendos distribuidos on-chain via smart contracts
+            Soroban en la red Stellar.
           </p>
+
+          <div className="mt-4 flex flex-wrap items-center gap-3">
+            <button className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2 text-[13px] font-medium text-slate-700 shadow-sm transition-all hover:bg-slate-50">
+              <span className="material-symbols-outlined text-[16px]">
+                description
+              </span>
+              Ficha T\u00E9cnica PDF
+            </button>
+            <a
+              href={`https://stellar.expert/testnet/contract/${PROJECT.contractId}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2 text-[13px] font-medium text-slate-700 shadow-sm transition-all hover:bg-slate-50"
+            >
+              <span className="material-symbols-outlined text-[16px]">
+                open_in_new
+              </span>
+              Ver en Soroban Explorer
+            </a>
+            <span className="font-mono text-[11px] text-slate-400">
+              {shortAddr(PROJECT.contractId)}
+            </span>
+          </div>
         </div>
 
-        <div className="grid gap-8 lg:grid-cols-3">
-          {/* Left column */}
-          <div className="lg:col-span-2">
-            {/* Tabs */}
-            <div className="mb-6 flex gap-1 rounded-xl bg-slate-100 p-1">
-              {[
-                { key: "overview", label: "Resumen", icon: "info" },
-                { key: "iot", label: "Telemetría IoT", icon: "sensors" },
-                { key: "legal", label: "Estructura legal", icon: "gavel" },
-              ].map((tab) => (
-                <button
-                  key={tab.key}
-                  onClick={() => setActiveTab(tab.key as typeof activeTab)}
-                  className={`flex flex-1 items-center justify-center gap-1.5 rounded-lg px-4 py-2.5 text-[13px] font-medium transition-all ${
-                    activeTab === tab.key
-                      ? "bg-white text-slate-900 shadow-sm"
-                      : "text-slate-500 hover:text-slate-900"
-                  }`}
-                >
-                  <span className="material-symbols-outlined text-[16px]">
-                    {tab.icon}
+        {/* ═══════════ E) 6-metric banner grid ═══════════ */}
+        <div className="mb-10 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+          {[
+            {
+              icon: "solar_power",
+              label: "Capacidad",
+              value: "150 kWp",
+              color: "text-emerald-600",
+              bg: "bg-emerald-50",
+            },
+            {
+              icon: "trending_up",
+              label: "APY",
+              value: "12.5%",
+              color: "text-emerald-600",
+              bg: "bg-emerald-50",
+            },
+            {
+              icon: "token",
+              label: "Precio",
+              value: "10 XLM",
+              color: "text-orange-600",
+              bg: "bg-orange-50",
+            },
+            {
+              icon: "bolt",
+              label: "Producci\u00F3n",
+              value: "45.2 MWh",
+              color: "text-amber-600",
+              bg: "bg-amber-50",
+            },
+            {
+              icon: "eco",
+              label: "CO\u2082",
+              value: "32.4 Ton",
+              color: "text-emerald-600",
+              bg: "bg-emerald-50",
+            },
+            {
+              icon: "account_balance",
+              label: "Fondeo",
+              value: "85%",
+              color: "text-emerald-600",
+              bg: "bg-emerald-50",
+              extra: (
+                <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-slate-200">
+                  <div
+                    className="h-full rounded-full bg-emerald-500 transition-all"
+                    style={{ width: `${PROJECT.fundingPct}%` }}
+                  />
+                </div>
+              ),
+            },
+          ].map((m, i) => (
+            <div
+              key={i}
+              className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"
+            >
+              <span
+                className={`material-symbols-outlined mb-1.5 text-[20px] ${m.color}`}
+              >
+                {m.icon}
+              </span>
+              <div className="text-[12px] font-medium text-slate-500">
+                {m.label}
+              </div>
+              <div className="font-mono text-[18px] font-bold text-slate-900">
+                {m.value}
+              </div>
+              {m.extra}
+            </div>
+          ))}
+        </div>
+
+        {/* ═══════════ F) 2-column layout ═══════════ */}
+        <div className="grid gap-8 lg:grid-cols-12">
+          {/* ──── LEFT COLUMN (8 cols) ──── */}
+          <div className="space-y-8 lg:col-span-8">
+            {/* Hero image */}
+            <div className="relative overflow-hidden rounded-2xl border border-slate-200 shadow-lg">
+              <img
+                src={PROJECT.heroImage}
+                alt="Parque Solar Lima Norte"
+                className="h-[320px] w-full object-cover"
+              />
+              <div className="absolute inset-0 bg-gradient-to-t from-slate-900/60 via-slate-900/10 to-transparent" />
+              <div className="absolute bottom-4 left-4 flex flex-wrap items-center gap-2">
+                <span className="inline-flex items-center gap-1 rounded-full border border-white/30 bg-white/20 px-3 py-1 text-[11px] font-semibold text-white backdrop-blur-md">
+                  <span className="material-symbols-outlined text-[14px]">
+                    router
                   </span>
-                  {tab.label}
-                </button>
-              ))}
+                  NODO #04
+                </span>
+                <span className="inline-flex items-center gap-1 rounded-full border border-white/30 bg-white/20 px-3 py-1 text-[11px] font-semibold text-white backdrop-blur-md">
+                  <span className="material-symbols-outlined text-[14px]">
+                    electric_bolt
+                  </span>
+                  Inyecci&oacute;n de Red: 118.4 kW
+                </span>
+              </div>
             </div>
 
-            {/* Overview tab */}
-            {activeTab === "overview" && (
-              <div className="space-y-6">
-                <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-                  {[
-                    {
-                      icon: "bolt",
-                      value: p.todayEnergy + " kWh",
-                      label: "Generado hoy",
-                      color: "text-amber-600",
-                    },
-                    {
-                      icon: "solar_power",
-                      value: p.power,
-                      label: "Potencia",
-                      color: "text-emerald-600",
-                    },
-                    {
-                      icon: "group",
-                      value: p.investors.toString(),
-                      label: "Inversores",
-                      color: "text-orange-600",
-                    },
-                    {
-                      icon: "trending_up",
-                      value: p.annualReturn,
-                      label: "Retorno anual",
-                      color: "text-emerald-600",
-                    },
-                  ].map((m, i) => (
-                    <div
-                      key={i}
-                      className="rounded-xl border border-slate-200 bg-white p-4"
+            {/* Location metadata */}
+            <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+              <h3 className="mb-4 font-display text-[16px] font-bold text-slate-900">
+                Informaci&oacute;n del Activo
+              </h3>
+              <div className="grid gap-4 sm:grid-cols-3">
+                <div className="rounded-lg bg-slate-50 p-4">
+                  <div className="mb-1 text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+                    Ubicaci&oacute;n
+                  </div>
+                  <div className="text-[14px] font-medium text-slate-900">
+                    {PROJECT.location}
+                  </div>
+                  <div className="mt-1 font-mono text-[12px] text-slate-500">
+                    {PROJECT.coords}
+                  </div>
+                </div>
+                <div className="rounded-lg bg-slate-50 p-4">
+                  <div className="mb-1 text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+                    SUNARP
+                  </div>
+                  <div className="text-[14px] font-medium text-slate-900">
+                    Partida N&deg; {PROJECT.sunarpPartida}
+                  </div>
+                  <div className="mt-1 font-mono text-[12px] text-slate-500">
+                    Registro de Propiedad
+                  </div>
+                </div>
+                <div className="rounded-lg bg-slate-50 p-4">
+                  <div className="mb-1 text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+                    Punto de Inyecci&oacute;n
+                  </div>
+                  <div className="text-[14px] font-medium text-slate-900">
+                    {PROJECT.inyeccionLinea}
+                  </div>
+                  <div className="mt-1 font-mono text-[12px] text-slate-500">
+                    ENEL Distribuci&oacute;n
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* IoT Telemetry section */}
+            <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+              <div className="mb-4 flex items-center justify-between">
+                <h3 className="flex items-center gap-2 font-display text-[16px] font-bold text-slate-900">
+                  <span className="material-symbols-outlined text-[20px] text-emerald-600">
+                    sensors
+                  </span>
+                  Telemetr&iacute;a IoT en Tiempo Real
+                </h3>
+                <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold text-emerald-700">
+                  <span className="material-symbols-outlined text-[10px]">
+                    key
+                  </span>
+                  Firma Ed25519
+                </span>
+              </div>
+
+              {/* Time switcher tabs */}
+              <div className="mb-5 flex gap-1 rounded-lg bg-slate-100 p-1">
+                {(["Hoy", "7 D\u00EDas", "Este Mes", "Hist\u00F3rico"] as const).map(
+                  (tab) => (
+                    <button
+                      key={tab}
+                      onClick={() => setTelemetryTab(tab)}
+                      className={`flex-1 rounded-md px-3 py-1.5 text-[12px] font-medium transition-all ${
+                        telemetryTab === tab
+                          ? "bg-white text-slate-900 shadow-sm"
+                          : "text-slate-500 hover:text-slate-900"
+                      }`}
                     >
-                      <span
-                        className={`material-symbols-outlined mb-2 text-[20px] ${m.color}`}
-                      >
-                        {m.icon}
+                      {tab}
+                    </button>
+                  )
+                )}
+              </div>
+
+              {/* 4 live gauges */}
+              <div className="mb-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
+                {[
+                  {
+                    label: "Potencia",
+                    value: "118.4",
+                    unit: "kW",
+                    icon: "bolt",
+                    color: "text-amber-600",
+                  },
+                  {
+                    label: "Irradiancia",
+                    value: "940",
+                    unit: "W/m\u00B2",
+                    icon: "wb_sunny",
+                    color: "text-orange-500",
+                  },
+                  {
+                    label: "Temp.",
+                    value: "42.1",
+                    unit: "\u00B0C",
+                    icon: "thermostat",
+                    color: "text-red-500",
+                  },
+                  {
+                    label: "Eficiencia",
+                    value: "98.2",
+                    unit: "%",
+                    icon: "speed",
+                    color: "text-emerald-600",
+                  },
+                ].map((g, i) => (
+                  <div
+                    key={i}
+                    className="rounded-lg border border-slate-100 bg-slate-50 p-3 text-center"
+                  >
+                    <span
+                      className={`material-symbols-outlined mb-1 text-[18px] ${g.color}`}
+                    >
+                      {g.icon}
+                    </span>
+                    <div className="font-mono text-[22px] font-bold text-slate-900">
+                      {g.value}
+                      <span className="ml-0.5 text-[12px] font-medium text-slate-500">
+                        {g.unit}
                       </span>
-                      <div className="text-[16px] font-bold text-slate-900">
-                        {m.value}
-                      </div>
-                      <div className="text-[12px] text-slate-500">
-                        {m.label}
+                    </div>
+                    <div className="text-[11px] text-slate-400">{g.label}</div>
+                  </div>
+                ))}
+              </div>
+
+              {/* SVG solar production curve */}
+              <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+                <div className="mb-2 text-[12px] font-medium text-slate-500">
+                  Curva de Producci&oacute;n Solar &mdash; {telemetryTab}
+                </div>
+                <svg
+                  viewBox="0 0 360 120"
+                  className="h-32 w-full"
+                  fill="none"
+                  xmlns="http://www.w3.org/2000/svg"
+                >
+                  <defs>
+                    <linearGradient
+                      id="solarGrad"
+                      x1="0%"
+                      y1="0%"
+                      x2="0%"
+                      y2="100%"
+                    >
+                      <stop offset="0%" stopColor="#059669" stopOpacity="0.4" />
+                      <stop
+                        offset="100%"
+                        stopColor="#059669"
+                        stopOpacity="0.02"
+                      />
+                    </linearGradient>
+                  </defs>
+                  <path
+                    d={`M0,${120 - (solarPoints[0] / 120) * 120} ${solarPoints
+                      .map(
+                        (p, i) =>
+                          `L${(i / (solarPoints.length - 1)) * 360},${
+                            120 - (p / 120) * 120
+                          }`
+                      )
+                      .join(" ")} L360,120 L0,120 Z`}
+                    fill="url(#solarGrad)"
+                  />
+                  <path
+                    d={`M0,${120 - (solarPoints[0] / 120) * 120} ${solarPoints
+                      .map(
+                        (p, i) =>
+                          `L${(i / (solarPoints.length - 1)) * 360},${
+                            120 - (p / 120) * 120
+                          }`
+                      )
+                      .join(" ")}`}
+                    stroke="#059669"
+                    strokeWidth="2"
+                    fill="none"
+                  />
+                  {/* current point */}
+                  <circle
+                    cx="200"
+                    cy={120 - (118 / 120) * 120}
+                    r="4"
+                    fill="#059669"
+                  />
+                  <text
+                    x="206"
+                    y={120 - (118 / 120) * 120 - 6}
+                    fill="#059669"
+                    fontSize="10"
+                    fontFamily="JetBrains Mono"
+                  >
+                    118.4 kW
+                  </text>
+                </svg>
+              </div>
+            </div>
+
+            {/* Legal & Financial Architecture (RWA) */}
+            <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+              <h3 className="mb-4 font-display text-[16px] font-bold text-slate-900">
+                Arquitectura Legal y Financiera (RWA)
+              </h3>
+              <div className="grid gap-4 sm:grid-cols-3">
+                {[
+                  {
+                    icon: "handshake",
+                    title: "Off-taker",
+                    desc: "ENEL Distribuci\u00F3n Per\u00FA. Contrato PPA 10 a\u00F1os a tarifa indexada. Compromiso de compra garantizado.",
+                    accent: "border-l-emerald-500",
+                  },
+                  {
+                    icon: "account_balance",
+                    title: "Fideicomiso Bancario",
+                    desc: "Banco de Cr\u00E9dito del Per\u00FA (BCP). Fondo fiduciario segregado para distribuci\u00F3n de dividendos a token holders.",
+                    accent: "border-l-blue-500",
+                  },
+                  {
+                    icon: "verified",
+                    title: "Auditor\u00EDa T\u00E9cnica DNV",
+                    desc: "DNV GL certificada. Inspecci\u00F3n semestral de paneles, inversores y medici\u00F3n IoT independiente.",
+                    accent: "border-l-orange-500",
+                  },
+                ].map((item, i) => (
+                  <div
+                    key={i}
+                    className={`rounded-lg border border-slate-100 border-l-4 ${item.accent} bg-slate-50 p-4`}
+                  >
+                    <span className="material-symbols-outlined mb-2 text-[24px] text-slate-700">
+                      {item.icon}
+                    </span>
+                    <div className="mb-1 font-display text-[14px] font-bold text-slate-900">
+                      {item.title}
+                    </div>
+                    <div className="text-[13px] leading-relaxed text-slate-600">
+                      {item.desc}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Dividend Distribution table */}
+            <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+              <h3 className="mb-4 font-display text-[16px] font-bold text-slate-900">
+                Distribuci&oacute;n de Dividendos
+              </h3>
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-[13px]">
+                  <thead>
+                    <tr className="border-b border-slate-200">
+                      <th className="pb-2 pr-4 font-semibold text-slate-500">
+                        Fecha
+                      </th>
+                      <th className="pb-2 pr-4 font-semibold text-slate-500">
+                        kWh
+                      </th>
+                      <th className="pb-2 pr-4 font-semibold text-slate-500">
+                        Total
+                      </th>
+                      <th className="pb-2 pr-4 font-semibold text-slate-500">
+                        Rendimiento/Token
+                      </th>
+                      <th className="pb-2 font-semibold text-slate-500">
+                        Hash Stellar
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {DIVIDENDS.map((d, i) => (
+                      <tr
+                        key={i}
+                        className="border-b border-slate-100 last:border-0"
+                      >
+                        <td className="py-3 pr-4 font-medium text-slate-900">
+                          {d.fecha}
+                        </td>
+                        <td className="py-3 pr-4 font-mono text-slate-700">
+                          {d.kwh}
+                        </td>
+                        <td className="py-3 pr-4 font-mono font-semibold text-emerald-600">
+                          {d.total}
+                        </td>
+                        <td className="py-3 pr-4 font-mono text-slate-700">
+                          {d.rendimiento}
+                        </td>
+                        <td className="py-3">
+                          <span className="inline-flex items-center gap-1 rounded bg-slate-100 px-2 py-0.5 font-mono text-[12px] text-slate-600">
+                            <span className="material-symbols-outlined text-[12px] text-emerald-600">
+                              link
+                            </span>
+                            {d.hash}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* Downloadable Legal Documents */}
+            <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+              <h3 className="mb-4 font-display text-[16px] font-bold text-slate-900">
+                Documentos Legales Descargables
+              </h3>
+              <div className="grid gap-3 sm:grid-cols-2">
+                {LEGAL_DOCS.map((doc, i) => (
+                  <div
+                    key={i}
+                    className="flex items-center justify-between rounded-lg border border-slate-100 bg-slate-50 p-4 transition-colors hover:bg-slate-100"
+                  >
+                    <div className="flex items-center gap-3">
+                      <span className="material-symbols-outlined text-[20px] text-red-500">
+                        {doc.icon}
+                      </span>
+                      <div>
+                        <div className="text-[13px] font-medium text-slate-900">
+                          {doc.name}
+                        </div>
+                        <div className="font-mono text-[11px] text-slate-400 uppercase">
+                          .{doc.ext}
+                        </div>
                       </div>
                     </div>
-                  ))}
-                </div>
+                    <button className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-3 py-1.5 text-[12px] font-medium text-slate-700 shadow-sm transition-all hover:bg-slate-50">
+                      <span className="material-symbols-outlined text-[14px]">
+                        download
+                      </span>
+                      Descargar
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
 
-                <div className="rounded-xl border border-slate-200 bg-white p-6">
-                  <div className="mb-4 flex justify-between">
-                    <h3 className="font-bold text-slate-900">
-                      Progreso de financiación
-                    </h3>
-                    <span className="text-[13px] font-bold text-emerald-600">
-                      {p.funding}%
+          {/* ──── RIGHT COLUMN (4 cols, sticky) ──── */}
+          <div className="lg:col-span-4">
+            <div className="sticky top-20 space-y-4">
+              {/* Investment widget card */}
+              <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-lg">
+                {/* Card header */}
+                <div className="border-b border-slate-100 bg-gradient-to-r from-emerald-50 to-orange-50 px-6 py-4">
+                  <div className="flex items-center justify-between">
+                    <span className="font-display text-[14px] font-bold text-slate-900">
+                      Inversi&oacute;n Directa Soroban
+                    </span>
+                    <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-bold text-emerald-700">
+                      <span className="material-symbols-outlined text-[12px]">
+                        trending_up
+                      </span>
+                      12.5% APY
                     </span>
                   </div>
-                  <div className="mb-4 h-3 overflow-hidden rounded-full bg-slate-200">
-                    <div
-                      className="h-full rounded-full bg-emerald-600"
-                      style={{ width: `${p.funding}%` }}
-                    />
-                  </div>
-                  <div className="grid grid-cols-3 gap-4 text-center text-[13px]">
-                    <div>
-                      <div className="font-bold text-slate-900">
-                        {p.minted}
-                      </div>
-                      <div className="text-slate-500">Tokens vendidos</div>
-                    </div>
-                    <div>
-                      <div className="font-bold text-slate-900">
-                        {p.totalSupply - p.minted}
-                      </div>
-                      <div className="text-slate-500">Disponibles</div>
-                    </div>
-                    <div>
-                      <div className="font-bold text-slate-900">
-                        {p.totalSupply}
-                      </div>
-                      <div className="text-slate-500">Total</div>
-                    </div>
-                  </div>
                 </div>
 
-                <div className="rounded-xl border border-slate-200 bg-white p-6">
-                  <h3 className="mb-4 font-bold text-slate-900">
-                    Distribución de dividendos
-                  </h3>
-                  <div className="space-y-3">
-                    {[
-                      {
-                        date: "Sep 2026",
-                        energy: "1,280 kWh",
-                        amount: "4,250 XLM",
-                        status: "Depositado",
-                      },
-                      {
-                        date: "Ago 2026",
-                        energy: "1,140 kWh",
-                        amount: "3,800 XLM",
-                        status: "Depositado",
-                      },
-                      {
-                        date: "Jul 2026",
-                        energy: "980 kWh",
-                        amount: "3,200 XLM",
-                        status: "Reclamado",
-                      },
-                    ].map((d, i) => (
-                      <div
-                        key={i}
-                        className="flex items-center justify-between rounded-lg bg-slate-50 border border-slate-100 px-4 py-3"
+                {/* Currency selector */}
+                <div className="px-6 pt-5">
+                  <div className="mb-3 flex gap-1 rounded-lg bg-slate-100 p-1">
+                    {(["XLM", "USDC"] as const).map((c) => (
+                      <button
+                        key={c}
+                        onClick={() => setCurrency(c)}
+                        className={`flex-1 rounded-md py-1.5 text-[12px] font-semibold transition-all ${
+                          currency === c
+                            ? "bg-white text-slate-900 shadow-sm"
+                            : "text-slate-500 hover:text-slate-900"
+                        }`}
                       >
-                        <div>
-                          <div className="font-medium text-slate-900">
-                            {d.date}
-                          </div>
-                          <div className="text-[12px] text-slate-500">
-                            {d.energy}
-                          </div>
-                        </div>
-                        <div className="text-right">
-                          <div className="font-bold text-emerald-600">
-                            {d.amount}
-                          </div>
-                          <div className="text-[12px] text-slate-500">
-                            {d.status}
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* IoT tab */}
-            {activeTab === "iot" && (
-              <div className="space-y-6">
-                <div className="rounded-xl border border-slate-200 bg-white p-6">
-                  <h3 className="mb-4 font-bold text-slate-900">
-                    Telemetría en tiempo real
-                  </h3>
-                  <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-                    {[
-                      { icon: "bolt", value: p.todayEnergy + " kWh", label: "Generado hoy" },
-                      { icon: "calendar_month", value: p.monthEnergy.toLocaleString() + " kWh", label: "Este mes" },
-                      { icon: "eco", value: p.co2Avoided + " ton", label: "CO₂ evitado" },
-                      { icon: "check_circle", value: p.uptime + "%", label: "Uptime" },
-                      { icon: "power", value: p.peakPower + " W", label: "Pico" },
-                      { icon: "wb_sunny", value: p.irradiance + " W/m²", label: "Irradiancia" },
-                      { icon: "thermostat", value: p.temperature + "°C", label: "Temperatura" },
-                      { icon: "water_drop", value: p.humidity + "%", label: "Humedad" },
-                    ].map((m, i) => (
-                      <div key={i} className="rounded-lg bg-slate-50 border border-slate-100 p-3 text-center">
-                        <span className="material-symbols-outlined mb-1 text-[18px] text-emerald-600">{m.icon}</span>
-                        <div className="text-[13px] font-bold text-slate-900">{m.value}</div>
-                        <div className="text-[11px] text-slate-500">{m.label}</div>
-                      </div>
+                        {c}
+                      </button>
                     ))}
                   </div>
                 </div>
 
-                <div className="rounded-xl border border-slate-200 bg-white p-6">
-                  <h3 className="mb-4 font-bold text-slate-900">
-                    Generación energética
-                  </h3>
-                  <div className="flex h-48 items-end gap-2">
-                    {[35, 42, 38, 51, 47, 44, 39, 45, 48, 52, 41, 46].map(
-                      (v, i) => (
-                        <div
-                          key={i}
-                          className="chart-bar flex-1 rounded-t bg-emerald-600"
-                          style={{ height: `${(v / 60) * 100}%` }}
-                        />
-                      )
+                {/* Token input + pills */}
+                <div className="px-6 pb-4">
+                  <label className="mb-1.5 block text-[12px] font-medium text-slate-500">
+                    Cantidad de Tokens
+                  </label>
+                  <input
+                    type="number"
+                    min={1}
+                    value={tokenCount}
+                    onChange={(e) =>
+                      setTokenCount(Math.max(1, parseInt(e.target.value) || 1))
+                    }
+                    className="mb-3 w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 font-mono text-[24px] font-bold text-slate-900 outline-none transition-all focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20"
+                  />
+                  <div className="mb-4 flex gap-2">
+                    {[10, 50, 100].map((n) => (
+                      <button
+                        key={n}
+                        onClick={() => setTokenCount(n)}
+                        className="flex-1 rounded-lg border border-slate-200 bg-white py-1.5 text-[12px] font-semibold text-slate-600 transition-all hover:border-emerald-300 hover:bg-emerald-50 hover:text-emerald-700"
+                      >
+                        +{n}
+                      </button>
+                    ))}
+                    <button
+                      onClick={() => setTokenCount(PROJECT.totalSupply - PROJECT.soldSupply)}
+                      className="flex-1 rounded-lg border border-slate-200 bg-white py-1.5 text-[12px] font-semibold text-slate-600 transition-all hover:border-orange-300 hover:bg-orange-50 hover:text-orange-700"
+                    >
+                      M&aacute;x
+                    </button>
+                  </div>
+                </div>
+
+                {/* Real-time calculated metrics */}
+                <div className="mx-6 mb-4 space-y-2 rounded-xl bg-slate-50 p-4">
+                  <div className="flex justify-between text-[13px]">
+                    <span className="text-slate-500">Costo Total</span>
+                    <span className="font-mono font-bold text-slate-900">
+                      {fmt(costXlm, 0)} XLM
+                      <span className="ml-1 text-[11px] font-normal text-slate-400">
+                        (${fmt(costUsd)} USD)
+                      </span>
+                    </span>
+                  </div>
+                  <div className="flex justify-between text-[13px]">
+                    <span className="text-slate-500">
+                      Capacidad Adjudicada
+                    </span>
+                    <span className="font-mono font-bold text-emerald-600">
+                      {fmt(capacityAdjudicada, 1)} Wp
+                    </span>
+                  </div>
+                  <div className="flex justify-between text-[13px]">
+                    <span className="text-slate-500">Retorno Diario</span>
+                    <span className="font-mono font-bold text-emerald-600">
+                      {fmt(retornoDiario)} XLM
+                    </span>
+                  </div>
+                  <div className="flex justify-between text-[13px]">
+                    <span className="text-slate-500">Retorno Anual</span>
+                    <span className="font-mono font-bold text-emerald-600">
+                      {fmt(retornoAnual)} XLM
+                    </span>
+                  </div>
+                  <div className="flex justify-between text-[13px]">
+                    <span className="text-slate-500">CO&#x2082; Mitigado</span>
+                    <span className="font-mono font-bold text-emerald-600">
+                      {fmt(co2Mitigado, 2)} ton/a&ntilde;o
+                    </span>
+                  </div>
+                </div>
+
+                {/* Wallet pill */}
+                <div className="px-6 pb-4">
+                  {connected ? (
+                    <div className="mb-3 flex items-center justify-between rounded-full border border-emerald-200 bg-emerald-50 px-4 py-2">
+                      <div className="flex items-center gap-2">
+                        <span className="h-2 w-2 rounded-full bg-emerald-500" />
+                        <span className="font-mono text-[12px] font-medium text-emerald-700">
+                          {shortAddr(address || "")}
+                        </span>
+                      </div>
+                      <span className="font-mono text-[12px] text-slate-500">
+                        {balance} XLM
+                      </span>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={connect}
+                      className="mb-3 flex w-full items-center justify-center gap-2 rounded-full border border-slate-200 bg-slate-50 py-2 text-[13px] font-medium text-slate-600 transition-all hover:bg-slate-100"
+                    >
+                      <span className="material-symbols-outlined text-[16px]">
+                        account_balance_wallet
+                      </span>
+                      Conectar Freighter
+                    </button>
+                  )}
+                </div>
+
+                {/* CTA button */}
+                <div className="px-6 pb-5">
+                  <button
+                    onClick={handleBuy}
+                    disabled={buying}
+                    className="flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 py-3.5 text-[14px] font-bold text-white shadow-lg shadow-emerald-600/25 transition-all hover:bg-emerald-700 hover:shadow-xl disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {buying ? (
+                      <>
+                        <span className="material-symbols-outlined animate-spin text-[18px]">
+                          progress_activity
+                        </span>
+                        Procesando...
+                      </>
+                    ) : (
+                      <>
+                        <span className="material-symbols-outlined text-[18px]">
+                          lock
+                        </span>
+                        Confirmar y Firmar en Stellar
+                      </>
+                    )}
+                  </button>
+                </div>
+
+                {/* Transaction result */}
+                {txResult && (
+                  <div className="mx-6 mb-5 rounded-lg border p-3">
+                    {txResult.status === "success" ? (
+                      <div className="border-emerald-200 bg-emerald-50">
+                        <div className="flex items-center gap-2">
+                          <span className="material-symbols-outlined text-[16px] text-emerald-600">
+                            check_circle
+                          </span>
+                          <span className="text-[12px] font-semibold text-emerald-700">
+                            Transacci&oacute;n Exitosa
+                          </span>
+                        </div>
+                        <div className="mt-1 font-mono text-[11px] text-slate-600">
+                          {txResult.hash}
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="border-red-200 bg-red-50">
+                        <div className="flex items-center gap-2">
+                          <span className="material-symbols-outlined text-[16px] text-red-600">
+                            error
+                          </span>
+                          <span className="text-[12px] font-semibold text-red-700">
+                            Error
+                          </span>
+                        </div>
+                        <div className="mt-1 text-[11px] text-slate-600">
+                          {txResult.message}
+                        </div>
+                      </div>
                     )}
                   </div>
-                  <div className="mt-2 flex justify-between text-[11px] text-slate-500">
-                    <span>Ene</span>
-                    <span>Feb</span>
-                    <span>Mar</span>
-                    <span>Abr</span>
-                    <span>May</span>
-                    <span>Jun</span>
-                    <span>Jul</span>
-                    <span>Ago</span>
-                    <span>Sep</span>
-                    <span>Oct</span>
-                    <span>Nov</span>
-                    <span>Dic</span>
-                  </div>
-                </div>
-              </div>
-            )}
+                )}
 
-            {/* Legal tab */}
-            {activeTab === "legal" && (
-              <div className="space-y-6">
-                <div className="rounded-xl border border-slate-200 bg-white p-6">
-                  <h3 className="mb-4 font-bold text-slate-900">
-                    Estructura RWA
-                  </h3>
-                  <div className="space-y-4">
+                {/* 3 micro-guarantees */}
+                <div className="border-t border-slate-100 px-6 py-4">
+                  <div className="space-y-2">
                     {[
                       {
-                        icon: "business",
-                        title: "SPV: NIKO SUN Energy SAC",
-                        desc: "Vehicle de propósito especial",
+                        icon: "shield",
+                        text: "Sin custodia — tu clave, tus tokens",
                       },
                       {
-                        icon: "description",
-                        title: "Contrato de usufructo",
-                        desc: "Derechos de energía sobre paneles solares",
+                        icon: "swap_horiz",
+                        text: "Mercado secundario DEX (Soroswap)",
                       },
                       {
                         icon: "token",
-                        title: "Tokens SEP-41 en Stellar",
-                        desc: "Representación fraccionada de la propiedad",
+                        text: "Certificado NFT por cada token",
                       },
-                      {
-                        icon: "gavel",
-                        title: "Regulación: SMI Perú",
-                        desc: "Supervisado por Superintendencia del Mercado de Valores",
-                      },
-                    ].map((item, i) => (
+                    ].map((g, i) => (
                       <div
                         key={i}
-                        className="flex items-start gap-3 rounded-lg bg-slate-50 border border-slate-100 p-4"
+                        className="flex items-center gap-2 text-[11px] text-slate-500"
                       >
-                        <span className="material-symbols-outlined mt-0.5 text-[20px] text-emerald-600">
-                          {item.icon}
+                        <span className="material-symbols-outlined text-[14px] text-emerald-600">
+                          {g.icon}
                         </span>
-                        <div>
-                          <div className="font-medium text-slate-900">
-                            {item.title}
-                          </div>
-                          <div className="text-[13px] text-slate-500">
-                            {item.desc}
-                          </div>
-                        </div>
+                        {g.text}
                       </div>
                     ))}
                   </div>
                 </div>
               </div>
-            )}
-          </div>
 
-          {/* Right column: Purchase sidebar */}
-          <div className="lg:col-span-1">
-            <div className="sticky top-24 rounded-xl border border-slate-200 bg-white p-6 shadow-lg">
-              <h3 className="mb-4 text-[18px] font-bold text-slate-900">
-                Invertir en este proyecto
-              </h3>
-              <div className="mb-4 rounded-xl bg-slate-50 border border-slate-100 p-4">
-                <div className="mb-1 text-[12px] text-slate-500">
-                  Precio por token
-                </div>
-                <div className="text-[24px] font-bold text-slate-900 font-mono">
-                  {p.pricePerToken}
-                </div>
-                <div className="text-[12px] text-slate-500">
-                  ≈ $5.40 USD
-                </div>
-              </div>
-              <div className="mb-4">
-                <label className="mb-1.5 block text-[13px] font-medium text-slate-900">
-                  Cantidad de tokens
-                </label>
-                <input
-                  type="number"
-                  min="1"
-                  value={purchaseAmount}
-                  onChange={(e) => setPurchaseAmount(e.target.value)}
-                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-[24px] font-bold text-slate-900 font-mono outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20"
-                />
-              </div>
-              <div className="mb-6 space-y-2 rounded-xl bg-slate-50 border border-slate-100 p-4 text-[13px]">
-                <div className="flex justify-between">
-                  <span className="text-slate-500">Total a pagar</span>
-                  <span className="font-bold text-slate-900 font-mono">
-                    {totalCost} XLM
+              {/* Asesor&iacute;a Institucional support box */}
+              <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+                <div className="mb-2 flex items-center gap-2">
+                  <span className="material-symbols-outlined text-[20px] text-slate-600">
+                    support_agent
+                  </span>
+                  <span className="font-display text-[14px] font-bold text-slate-900">
+                    Asesor&iacute;a Institucional
                   </span>
                 </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-500">
-                    Retorno anual estimado
-                  </span>
-                  <span className="font-bold text-emerald-600 font-mono">
-                    {p.annualReturn}
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-500">Retorno IRR</span>
-                  <span className="font-bold text-emerald-600 font-mono">
-                    {p.irr}
-                  </span>
-                </div>
-              </div>
-              <button className="mb-3 flex w-full items-center justify-center gap-2 rounded-xl bg-secondary py-3.5 text-[13px] font-bold text-white shadow-lg shadow-orange-500/20 transition-all hover:bg-orange-600 hover:shadow-xl">
-                <span className="material-symbols-outlined text-[18px]">
-                  token
-                </span>
-                Comprar Tokens
-              </button>
-              <div className="text-center text-[12px] text-slate-500">
-                Transacción firmada con Freighter
+                <p className="mb-3 text-[12px] leading-relaxed text-slate-500">
+                  Inversores institucionales: contáctanos para allocations
+                  dedicados, estructura legal personalizada y onboarding
+                  corporativo.
+                </p>
+                <button className="w-full rounded-lg border border-slate-200 bg-white py-2 text-[12px] font-semibold text-slate-700 transition-all hover:bg-slate-50">
+                  Contactar Equipo
+                </button>
               </div>
             </div>
           </div>

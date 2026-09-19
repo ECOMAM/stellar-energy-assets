@@ -1,24 +1,29 @@
 "use client";
 
+import { useWallet } from "@/lib/WalletContext";
+
 export default function WalletModal({
   open,
   onClose,
-  onConnect,
 }: {
   open: boolean;
   onClose: () => void;
-  onConnect: (addr: string | null) => void;
 }) {
+  const { connect } = useWallet();
+
   if (!open) return null;
 
-  const handleFreighter = () => {
-    onConnect("GC755Q7SO6ZHWP4FOSR52R7W624DWO7RAD6UAQ5TLTEUBXBKMJ5AVIZ6");
-    onClose();
-  };
-
-  const handleLobstr = () => {
-    onConnect("GAAAA...LOBSTR");
-    onClose();
+  const handleFreighter = async () => {
+    try {
+      await connect();
+      onClose();
+    } catch (err) {
+      alert(
+        err instanceof Error
+          ? err.message
+          : "Error al conectar con Freighter"
+      );
+    }
   };
 
   return (
@@ -30,7 +35,6 @@ export default function WalletModal({
         className="w-full max-w-md bg-white border border-slate-200 p-8 rounded-xl shadow-2xl relative"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Header */}
         <div className="flex items-center justify-between pb-4 border-b border-slate-100">
           <h3 className="text-[20px] font-display font-bold text-slate-900">
             Conectar Billetera Stellar
@@ -48,7 +52,6 @@ export default function WalletModal({
           smart contracts Soroban de NIKO SUN:
         </p>
 
-        {/* Wallet options */}
         <div className="space-y-3">
           <button
             onClick={handleFreighter}
@@ -68,7 +71,11 @@ export default function WalletModal({
           </button>
 
           <button
-            onClick={handleLobstr}
+            onClick={() => {
+              alert(
+                "Lobstr Wallet — escanea el QR con tu app Lobstr para conectar via WalletConnect"
+              );
+            }}
             className="w-full p-4 rounded-lg bg-slate-50 border border-slate-200 hover:bg-orange-50 hover:border-orange-300 transition-colors flex items-center justify-between text-slate-900"
           >
             <div className="flex items-center gap-3">
@@ -84,6 +91,19 @@ export default function WalletModal({
             </span>
           </button>
         </div>
+
+        <p className="text-[11px] text-slate-400 mt-5 text-center">
+          Freighter es la billetera recomendada para Stellar y Soroban.
+          Instálala desde{" "}
+          <a
+            href="https://freighter.app"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-emerald-600 underline"
+          >
+            freighter.app
+          </a>
+        </p>
       </div>
     </div>
   );

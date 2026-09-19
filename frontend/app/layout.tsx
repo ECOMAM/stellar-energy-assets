@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { WalletProvider } from "@/lib/WalletContext";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -32,7 +33,7 @@ export default function RootLayout({
         />
       </head>
       <body className="min-h-screen bg-surface font-body text-on-surface antialiased selection:bg-primary-fixed-dim selection:text-on-primary-fixed">
-        {children}
+        <WalletProvider>{children}</WalletProvider>
       </body>
     </html>
   );
