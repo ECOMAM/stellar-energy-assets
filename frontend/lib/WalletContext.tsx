@@ -184,9 +184,16 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       const response = await server.sendTransaction(signedTx);
 
       if (response.status === "ERROR") {
-        throw new Error(
-          `Transaction failed: ${JSON.stringify(response.errorResult)}`
-        );
+        // Stellar SDK errorResult contains BigInt values that JSON.stringify can't handle
+        let errMsg: string;
+        try {
+          errMsg = JSON.stringify(response.errorResult, (_key, value) =>
+            typeof value === "bigint" ? value.toString() : value
+          );
+        } catch {
+          errMsg = String(response.errorResult);
+        }
+        throw new Error(`Transaction failed: ${errMsg}`);
       }
 
       // Poll for result
