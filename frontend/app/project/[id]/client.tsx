@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { useWallet } from "@/lib/WalletContext";
 import TransactionSigningModal from "@/components/TransactionSigningModal";
 import TransactionSuccess from "@/components/TransactionSuccess";
@@ -94,6 +94,10 @@ export default function ProjectDetailClient() {
   /* ── Investment calculator state ── */
   const [currency, setCurrency] = useState<"XLM" | "USDC">("XLM");
   const [tokenCount, setTokenCount] = useState<number>(1);
+
+  /* ── Mounted guard for hydration (prevents React #418) ── */
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
 
   /* ── Signing modal state machine ── */
   type SigningPhase =
@@ -891,7 +895,11 @@ export default function ProjectDetailClient() {
 
                 {/* Wallet pill */}
                 <div className="px-6 pb-4">
-                  {connected ? (
+                  {!mounted ? (
+                    <div className="mb-3 flex w-full items-center justify-center gap-2 rounded-full border border-slate-200 bg-slate-50 py-2">
+                      <span className="h-4 w-4 rounded-full bg-slate-200 animate-pulse" />
+                    </div>
+                  ) : connected ? (
                     <div className="mb-3 flex items-center justify-between rounded-full border border-emerald-200 bg-emerald-50 px-4 py-2">
                       <div className="flex items-center gap-2">
                         <span className="h-2 w-2 rounded-full bg-emerald-500" />

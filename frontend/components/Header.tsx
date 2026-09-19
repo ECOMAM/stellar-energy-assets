@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useWallet } from "@/lib/WalletContext";
 import WalletModal from "./WalletModal";
 
@@ -8,6 +8,8 @@ export default function Header() {
   const { address, connected, connecting, connect, disconnect, balance } =
     useWallet();
   const [modalOpen, setModalOpen] = useState(false);
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
 
   const handleConnect = async () => {
     try {
@@ -77,7 +79,7 @@ export default function Header() {
 
           {/* Network + Wallet */}
           <div className="flex items-center gap-3.5">
-            {connected && (
+            {mounted && connected && (
               <div className="hidden sm:flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-50 border border-emerald-200 shadow-sm">
                 <span className="relative flex h-2 w-2">
                   <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-500 opacity-75" />
@@ -92,7 +94,9 @@ export default function Header() {
               </div>
             )}
 
-            {connected && address ? (
+            {!mounted ? (
+              <div className="h-10 w-40 rounded-xl bg-slate-100 animate-pulse" />
+            ) : connected && address ? (
               <div className="flex items-center gap-2">
                 <button
                   onClick={disconnect}

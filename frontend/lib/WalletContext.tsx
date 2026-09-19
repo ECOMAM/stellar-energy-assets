@@ -148,13 +148,16 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       const contract = new Contract(contractId);
       const account = await server.getAccount(state.address);
 
-      // Wrap Stellar address strings as Soroban Address objects
+      // Convert Stellar address strings to ScVal for Soroban contract calls
+      // contract.call() cannot auto-serialize Address instances — we must
+      // explicitly call .toScVal() so the XDR writer receives a proper ScVal.
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const sorobanArgs = args.map((a: any) =>
-        typeof a === "string" && /^[GC][A-Z0-9]{55}$/.test(a)
-          ? Address.fromString(a)
-          : a
-      );
+      const sorobanArgs = args.map((a: any) => {
+        if (typeof a === "string" && /^[GC][A-Z0-9]{55}$/.test(a)) {
+          return Address.fromString(a).toScVal();
+        }
+        return a;
+      });
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const builtTx = contract.call(method, ...(sorobanArgs as any[]));
