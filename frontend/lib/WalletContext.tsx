@@ -15,6 +15,7 @@ import {
 } from "@stellar/freighter-api";
 import * as SorobanRpc from "@stellar/stellar-sdk/rpc";
 import {
+  Address,
   Contract,
   TransactionBuilder,
   Transaction,
@@ -147,8 +148,16 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       const contract = new Contract(contractId);
       const account = await server.getAccount(state.address);
 
+      // Wrap Stellar address strings as Soroban Address objects
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const builtTx = contract.call(method, ...(args as any[]));
+      const sorobanArgs = args.map((a: any) =>
+        typeof a === "string" && /^[GC][A-Z0-9]{55}$/.test(a)
+          ? Address.fromString(a)
+          : a
+      );
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const builtTx = contract.call(method, ...(sorobanArgs as any[]));
       const tx = new TransactionBuilder(account, {
         fee: "100000",
         networkPassphrase: PASSPHRASE,

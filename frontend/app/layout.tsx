@@ -6,7 +6,7 @@ export const metadata: Metadata = {
   title: "NIKO SUN — Solar Energy RWA on Stellar",
   description:
     "Tokenize solar energy projects. Invest in renewables on Stellar.",
-  icons: { icon: "/favicon.ico" },
+  icons: { icon: "/favicon.svg" },
 };
 
 export default function RootLayout({
