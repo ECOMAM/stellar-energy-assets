@@ -1,7 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import { useWallet } from "@/lib/WalletContext";
+import TransactionSigningModal from "@/components/TransactionSigningModal";
+import TransactionSuccess from "@/components/TransactionSuccess";
 
 /* ──────────────────── Constants ──────────────────── */
 
@@ -80,17 +82,34 @@ function shortAddr(a: string) {
 /* ──────────────────── Component ──────────────────── */
 
 export default function ProjectDetailClient() {
-  const { connected, address, balance, signAndSend, connect } = useWallet();
+  const {
+    connected,
+    address,
+    balance,
+    signAndSend,
+    connect,
+    fetchBalance,
+  } = useWallet();
 
   /* ── Investment calculator state ── */
   const [currency, setCurrency] = useState<"XLM" | "USDC">("XLM");
   const [tokenCount, setTokenCount] = useState<number>(1);
-  const [txResult, setTxResult] = useState<{
-    status: "success" | "error";
-    hash: string;
-    message: string;
-  } | null>(null);
-  const [buying, setBuying] = useState(false);
+
+  /* ── Signing modal state machine ── */
+  type SigningPhase =
+    | "idle"
+    | "preparing"
+    | "signing"
+    | "submitting"
+    | "success"
+    | "error"
+    | "rejected"
+    | "insufficient_balance"
+    | "wallet_missing";
+  const [signingOpen, setSigningOpen] = useState(false);
+  const [signingPhase, setSigningPhase] = useState<SigningPhase>("idle");
+  const [signingError, setSigningError] = useState<string>("");
+  const [txHash, setTxHash] = useState<string>("");
 
   /* ── IoT telemetry tab ── */
   const [telemetryTab, setTelemetryTab] = useState<"Hoy" | "7 D\u00EDas" | "Este Mes" | "Hist\u00F3rico">("Hoy");
@@ -104,35 +123,101 @@ export default function ProjectDetailClient() {
   const retornoAnual = costXlm * (PROJECT.apy / 100);
   const co2Mitigado = tokenCount * 0.32; // ~0.32 ton CO2 per token per year
 
-  /* ── Handle buy ── */
-  async function handleBuy() {
+  /* ── Handle buy: opens modal, then executes on confirm ── */
+  const openSigningModal = useCallback(() => {
     if (!connected) {
       connect();
       return;
     }
-    setTxResult(null);
-    setBuying(true);
+    setSigningError("");
+    setTxHash("");
+    setSigningPhase("idle");
+    setSigningOpen(true);
+  }, [connected, connect]);
+
+  const executeBuy = useCallback(async () => {
+    // Edge case: wallet not connected (shouldn't happen if modal opened, but guard)
+    if (!connected || !address) {
+      setSigningPhase("wallet_missing");
+      return;
+    }
+
+    // Edge case: insufficient balance
+    const balanceNum = parseFloat(balance.replace(/,/g, ""));
+    if (balanceNum < costXlm) {
+      setSigningPhase("insufficient_balance");
+      return;
+    }
+
+    setSigningPhase("preparing");
+
     try {
       const paymentStroops = BigInt(
         Math.round(tokenCount * pricePerToken * 1_000_000)
       );
-      const { txHash } = await signAndSend(
+
+      // Brief preparing phase so user sees the modal state
+      await new Promise((r) => setTimeout(r, 600));
+      setSigningPhase("signing");
+
+      const { txHash: hash } = await signAndSend(
         PROJECT.contractId,
         "purchase_tokens",
         [address, BigInt(1), BigInt(tokenCount), paymentStroops]
       );
-      setTxResult({
-        status: "success",
-        hash: txHash,
-        message: `Tokens comprados. Tx: ${shortAddr(txHash)}`,
-      });
+
+      setTxHash(hash);
+      setSigningPhase("success");
+      // Refresh wallet balance after successful purchase
+      fetchBalance();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
-      setTxResult({ status: "error", hash: "", message: msg });
-    } finally {
-      setBuying(false);
+
+      // Detect Freighter rejection (user closed popup without signing)
+      if (
+        msg.includes("reject") ||
+        msg.includes("cancel") ||
+        msg.includes("decline") ||
+        msg.includes("User declined") ||
+        msg.includes("denied") ||
+        msg.includes("Request closed")
+      ) {
+        setSigningPhase("rejected");
+      }
+      // Detect Freighter not installed
+      else if (
+        msg.includes("not installed") ||
+        msg.includes("freighter") ||
+        msg.includes("Freighter") ||
+        msg.includes("is not defined") ||
+        msg.includes("window.freighter")
+      ) {
+        setSigningPhase("wallet_missing");
+      }
+      // Detect insufficient balance
+      else if (
+        msg.includes("insufficient") ||
+        msg.includes("balance") ||
+        msg.includes("underfunded") ||
+        msg.includes("NOT_ENOUGH_BALANCE")
+      ) {
+        setSigningPhase("insufficient_balance");
+      }
+      // All other errors
+      else {
+        setSigningError(msg);
+        setSigningPhase("error");
+      }
     }
-  }
+  }, [
+    connected,
+    address,
+    balance,
+    costXlm,
+    tokenCount,
+    pricePerToken,
+    signAndSend,
+  ]);
 
   /* ── SVG solar curve data ── */
   const solarPoints = [
@@ -834,62 +919,15 @@ export default function ProjectDetailClient() {
                 {/* CTA button */}
                 <div className="px-6 pb-5">
                   <button
-                    onClick={handleBuy}
-                    disabled={buying}
-                    className="flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 py-3.5 text-[14px] font-bold text-white shadow-lg shadow-emerald-600/25 transition-all hover:bg-emerald-700 hover:shadow-xl disabled:cursor-not-allowed disabled:opacity-60"
+                    onClick={openSigningModal}
+                    className="flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 py-3.5 text-[14px] font-bold text-white shadow-lg shadow-emerald-600/25 transition-all hover:bg-emerald-700 hover:shadow-xl active:scale-[0.98]"
                   >
-                    {buying ? (
-                      <>
-                        <span className="material-symbols-outlined animate-spin text-[18px]">
-                          progress_activity
-                        </span>
-                        Procesando...
-                      </>
-                    ) : (
-                      <>
-                        <span className="material-symbols-outlined text-[18px]">
-                          lock
-                        </span>
-                        Confirmar y Firmar en Stellar
-                      </>
-                    )}
+                    <span className="material-symbols-outlined text-[18px]">
+                      lock
+                    </span>
+                    Confirmar y Firmar en Stellar
                   </button>
                 </div>
-
-                {/* Transaction result */}
-                {txResult && (
-                  <div className="mx-6 mb-5 rounded-lg border p-3">
-                    {txResult.status === "success" ? (
-                      <div className="border-emerald-200 bg-emerald-50">
-                        <div className="flex items-center gap-2">
-                          <span className="material-symbols-outlined text-[16px] text-emerald-600">
-                            check_circle
-                          </span>
-                          <span className="text-[12px] font-semibold text-emerald-700">
-                            Transacci&oacute;n Exitosa
-                          </span>
-                        </div>
-                        <div className="mt-1 font-mono text-[11px] text-slate-600">
-                          {txResult.hash}
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="border-red-200 bg-red-50">
-                        <div className="flex items-center gap-2">
-                          <span className="material-symbols-outlined text-[16px] text-red-600">
-                            error
-                          </span>
-                          <span className="text-[12px] font-semibold text-red-700">
-                            Error
-                          </span>
-                        </div>
-                        <div className="mt-1 text-[11px] text-slate-600">
-                          {txResult.message}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                )}
 
                 {/* 3 micro-guarantees */}
                 <div className="border-t border-slate-100 px-6 py-4">
@@ -945,6 +983,51 @@ export default function ProjectDetailClient() {
           </div>
         </div>
       </main>
+
+      {/* ═══════════ Signing Modal ═══════════ */}
+      <TransactionSigningModal
+        open={signingOpen}
+        onClose={() => {
+          setSigningOpen(false);
+          // Reset to idle after close animation
+          setTimeout(() => setSigningPhase("idle"), 200);
+        }}
+        onConfirm={executeBuy}
+        phase={signingPhase}
+        errorMessage={signingError}
+        projectName={PROJECT.name}
+        projectFlag={PROJECT.flag}
+        assetId={PROJECT.assetId}
+        tokenCount={tokenCount}
+        costXlm={costXlm}
+        costUsd={costUsd}
+        apy={PROJECT.apy}
+        capacityWp={capacityAdjudicada}
+        walletAddress={address || ""}
+        walletBalance={balance}
+        contractId={PROJECT.contractId}
+      />
+
+      {/* ═══════════ Success Screen ═══════════ */}
+      <TransactionSuccess
+        open={signingPhase === "success" && !!txHash}
+        onClose={() => {
+          setSigningOpen(false);
+          setSigningPhase("idle");
+          setTxHash("");
+        }}
+        txHash={txHash}
+        tokenCount={tokenCount}
+        costXlm={costXlm}
+        costUsd={costUsd}
+        projectName={PROJECT.name}
+        projectFlag={PROJECT.flag}
+        assetId={PROJECT.assetId}
+        walletAddress={address || ""}
+        apy={PROJECT.apy}
+        capacityWp={capacityAdjudicada}
+        contractId={PROJECT.contractId}
+      />
     </div>
   );
 }
