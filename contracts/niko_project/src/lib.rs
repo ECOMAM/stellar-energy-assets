@@ -146,6 +146,7 @@ impl NikoProject {
     // ========================================
 
     /// Purchase project tokens. Send native tokens (XLM) as payment.
+    /// Auto-initializes and creates project #1 if not yet set up (hackathon convenience).
     pub fn purchase_tokens(
         env: Env,
         buyer: Address,
@@ -155,11 +156,68 @@ impl NikoProject {
     ) {
         buyer.require_auth();
 
+        // ── Auto-init: if contract not initialized, initialize it ──
+        if !env.storage().instance().has(&NEXT_ID) {
+            env.storage().instance().set(&NEXT_ID, &1_u64);
+            env.storage().instance().set(&TOTAL_SALES, &0_u128);
+        }
+
+        // ── Auto-create project #1 if it doesn't exist ──
         let mut projects: Map<u64, Project> = env
             .storage()
             .instance()
             .get(&PROJECTS)
             .unwrap_or(Map::new(&env));
+
+        if !projects.contains(project_id) {
+            // Create default "Parque Solar Lima Norte" project
+            let default_project = Project {
+                creator: buyer.clone(),
+                total_supply: 100_000,
+                minted: 0,
+                min_purchase: 1,
+                price: 10_000_000, // 10 XLM per token in stroops (1 XLM = 1_000_000 stroops)
+                created_at: env.ledger().timestamp(),
+                active: true,
+                total_energy_kwh: 0,
+                total_revenue: 0,
+                reward_per_token_stored: 0,
+            };
+            projects.set(project_id, default_project);
+            env.storage().instance().set(&PROJECTS, &projects);
+
+            // Store name
+            let mut names: Map<u64, String> = env
+                .storage()
+                .instance()
+                .get(&NAMES)
+                .unwrap_or(Map::new(&env));
+            names.set(
+                project_id,
+                String::from_str(&env, "Parque Solar Lima Norte"),
+            );
+            env.storage().instance().set(&NAMES, &names);
+
+            // Update NEXT_ID if needed
+            let current_next: u64 = env
+                .storage()
+                .instance()
+                .get(&NEXT_ID)
+                .unwrap_or(1);
+            if project_id >= current_next {
+                env.storage()
+                    .instance()
+                    .set(&NEXT_ID, &(project_id + 1));
+            }
+
+            // Re-read projects after mutation
+            projects = env
+                .storage()
+                .instance()
+                .get(&PROJECTS)
+                .unwrap_or(Map::new(&env));
+        }
+
         let mut project = projects.get(project_id).expect("project not found");
 
         assert!(project.active, "project not active");

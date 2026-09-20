@@ -35,6 +35,13 @@ interface WalletState {
   connecting: boolean;
 }
 
+/** A single Soroban contract call descriptor for batch transactions. */
+export interface ContractCall {
+  contractId: string;
+  method: string;
+  args: unknown[];
+}
+
 interface WalletContextType extends WalletState {
   connect: () => Promise<void>;
   disconnect: () => void;
@@ -42,6 +49,11 @@ interface WalletContextType extends WalletState {
     contractId: string,
     method: string,
     args: unknown[],
+    signWith?: string
+  ) => Promise<{ txHash: string; result?: unknown }>;
+  /** Build one transaction with multiple Soroban contract calls and sign+send it. */
+  signAndSendBatch: (
+    calls: ContractCall[],
     signWith?: string
   ) => Promise<{ txHash: string; result?: unknown }>;
   fetchBalance: () => Promise<void>;
@@ -136,52 +148,51 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     });
   }, []);
 
-  const signAndSend = useCallback(
-    async (
-      contractId: string,
-      method: string,
-      args: unknown[],
-      signWith?: string
-    ) => {
-      if (!state.address) throw new Error("Wallet not connected");
-
-      // Lazy-load Stellar SDK — it uses BigInt internally which crashes SSR.
-      // Dynamic import ensures it only loads on the client.
+  // ── Shared helper: convert args to ScVal ──
+  const toScVals = useCallback(
+    async (args: unknown[]) => {
       const sdk = await import("@stellar/stellar-sdk");
-      const SorobanRpc = await import("@stellar/stellar-sdk/rpc");
-
-      const server = new SorobanRpc.Server(SERVER_URL);
-      const contract = new sdk.Contract(contractId);
-      const account = await server.getAccount(state.address);
-
-      // Convert all args to ScVal for Soroban contract calls.
-      // Addresses → Address.toScVal(), numbers/bigints → nativeToScVal()
-      const sorobanArgs = args.map((a: unknown) => {
+      return args.map((a: unknown) => {
         if (typeof a === "string" && /^[GC][A-Z0-9]{55}$/.test(a)) {
           return sdk.Address.fromString(a).toScVal();
         }
         if (typeof a === "bigint" || typeof a === "number") {
           return sdk.nativeToScVal(a, { type: "u128" });
         }
+        if (typeof a === "string") {
+          return sdk.nativeToScVal(a, { type: "string" });
+        }
         return a;
       });
+    },
+    []
+  );
 
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const builtTx = contract.call(method, ...(sorobanArgs as any[]));
+  // ── Shared helper: build, sign, send, poll ──
+  const buildSignSendPoll = useCallback(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    async (operations: any[], signWith?: string) => {
+      const sdk = await import("@stellar/stellar-sdk");
+      const SorobanRpc = await import("@stellar/stellar-sdk/rpc");
+
+      const server = new SorobanRpc.Server(SERVER_URL);
+      const account = await server.getAccount(state.address!);
+
       const tx = new sdk.TransactionBuilder(account, {
-        fee: "100000",
+        fee: String(operations.length * 100000),
         networkPassphrase: PASSPHRASE,
-      })
-        .addOperation(builtTx)
-        .setTimeout(180)
-        .build();
+      });
+      for (const op of operations) {
+        tx.addOperation(op);
+      }
+      const builtTx = tx.setTimeout(180).build();
 
-      const preparedTx = await server.prepareTransaction(tx);
+      const preparedTx = await server.prepareTransaction(builtTx);
       const txXdr = preparedTx.toXDR();
 
       const signed = await signTransaction(txXdr, {
         networkPassphrase: PASSPHRASE,
-        address: signWith || state.address,
+        address: signWith || state.address!,
       });
 
       const signedTx = sdk.TransactionBuilder.fromXDR(
@@ -191,12 +202,11 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       const response = await server.sendTransaction(signedTx);
 
       if (response.status === "ERROR") {
-        // Stellar SDK errorResult contains BigInt — serialize safely
         let errMsg: string;
         try {
           errMsg = JSON.stringify(
             response.errorResult,
-            (_key, value) =>
+            (_key: string, value: unknown) =>
               typeof value === "bigint" ? value.toString() : value
           );
         } catch {
@@ -218,12 +228,49 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         }
       }
 
-      return {
-        txHash: response.hash,
-        result: result?.result,
-      };
+      return { txHash: response.hash, result: result?.result };
     },
     [state.address]
+  );
+
+  const signAndSend = useCallback(
+    async (
+      contractId: string,
+      method: string,
+      args: unknown[],
+      signWith?: string
+    ) => {
+      if (!state.address) throw new Error("Wallet not connected");
+
+      const sdk = await import("@stellar/stellar-sdk");
+      const contract = new sdk.Contract(contractId);
+      const sorobanArgs = await toScVals(args);
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const op = contract.call(method, ...(sorobanArgs as any[]));
+      return buildSignSendPoll([op], signWith);
+    },
+    [state.address, toScVals, buildSignSendPoll]
+  );
+
+  const signAndSendBatch = useCallback(
+    async (calls: ContractCall[], signWith?: string) => {
+      if (!state.address) throw new Error("Wallet not connected");
+
+      const sdk = await import("@stellar/stellar-sdk");
+
+      // Build one operation per call, all in the same transaction
+      const ops = [];
+      for (const call of calls) {
+        const contract = new sdk.Contract(call.contractId);
+        const sorobanArgs = await toScVals(call.args);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        ops.push(contract.call(call.method, ...(sorobanArgs as any[])));
+      }
+
+      return buildSignSendPoll(ops, signWith);
+    },
+    [state.address, toScVals, buildSignSendPoll]
   );
 
   // Auto-reconnect on mount (client-only)
@@ -261,6 +308,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         connect,
         disconnect,
         signAndSend,
+        signAndSendBatch,
         fetchBalance,
       }}
     >

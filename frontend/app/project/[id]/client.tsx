@@ -164,13 +164,64 @@ export default function ProjectDetailClient() {
       await new Promise((r) => setTimeout(r, 600));
       setSigningPhase("signing");
 
-      const { txHash: hash } = await signAndSend(
-        PROJECT.contractId,
-        "purchase_tokens",
-        [address, BigInt(1), BigInt(tokenCount), paymentStroops]
-      );
+      // ── Attempt 1: direct purchase (fast path — works if contract already bootstrapped) ──
+      let purchaseResult: { txHash: string; result?: unknown };
+      try {
+        purchaseResult = await signAndSend(
+          PROJECT.contractId,
+          "purchase_tokens",
+          [address, BigInt(1), BigInt(tokenCount), paymentStroops]
+        );
+      } catch (purchaseErr: unknown) {
+        const purchaseMsg =
+          purchaseErr instanceof Error ? purchaseErr.message : String(purchaseErr);
 
-      setTxHash(hash);
+        // If the error indicates the contract/project isn't set up on testnet,
+        // auto-bootstrap: initialize() + create_project(), then retry purchase.
+        const isMissingProject =
+          purchaseMsg.includes("project not found") ||
+          purchaseMsg.includes("UnreachableCodeReached") ||
+          purchaseMsg.includes("VM call trapped") ||
+          purchaseMsg.includes("WasmVm");
+
+        if (!isMissingProject) {
+          // Not a bootstrap issue — rethrow to hit the error handlers below
+          throw purchaseErr;
+        }
+
+        setSigningPhase("preparing");
+
+        // Step 1: Initialize contract (silently ignore "already initialized" error)
+        try {
+          await signAndSend(PROJECT.contractId, "initialize", []);
+        } catch {
+          // Already initialized — expected on subsequent purchases
+        }
+
+        // Step 2: Create project #1 (silently ignore if it already exists)
+        try {
+          await signAndSend(PROJECT.contractId, "create_project", [
+            address, // creator
+            "Solar Lima Miraflores",
+            BigInt(100_000), // total_supply
+            BigInt(10_000_000), // price: 10 XLM in stroops
+            BigInt(1), // min_purchase
+          ]);
+        } catch {
+          // Already exists — expected on subsequent purchases
+        }
+
+        setSigningPhase("signing");
+
+        // Step 3: Retry the actual purchase
+        purchaseResult = await signAndSend(
+          PROJECT.contractId,
+          "purchase_tokens",
+          [address, BigInt(1), BigInt(tokenCount), paymentStroops]
+        );
+      }
+
+      setTxHash(purchaseResult.txHash);
       setSigningPhase("success");
       // Refresh wallet balance after successful purchase
       fetchBalance();
