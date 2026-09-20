@@ -23,7 +23,7 @@ const SERVER_URL =
   "https://soroban-testnet.stellar.org";
 const PASSPHRASE =
   process.env.NEXT_PUBLIC_STELLAR_NETWORK_PASSPHRASE ||
-  "Test SDF Future Network ; October 2012";
+  "Test SDF Network ; September 2015";
 const XLM_TO_USD = 0.13;
 
 interface WalletState {
