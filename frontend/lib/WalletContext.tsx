@@ -241,6 +241,21 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         }
       }
 
+      // Throw on on-chain failure (e.g. contract panic)
+      if (result?.status === "FAILED") {
+        let detail: string;
+        try {
+          detail = JSON.stringify(
+            result.result,
+            (_key: string, value: unknown) =>
+              typeof value === "bigint" ? value.toString() : value
+          );
+        } catch {
+          detail = String(result.result);
+        }
+        throw new Error(`Transaction failed on-chain: ${detail}`);
+      }
+
       return { txHash: response.hash, result: result?.result };
     },
     [state.address]

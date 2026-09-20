@@ -162,9 +162,42 @@ export default function ProjectDetailClient() {
 
       await new Promise((r) => setTimeout(r, 300));
 
-      // ── Purchase tokens ──
-      // NOTE: Contract must be initialized on testnet first.
-      // If you see UnreachableCodeReached, run scripts/init-contract.html once.
+      // ── Auto-initialize contract if needed (first purchase only) ──
+      setSigningPhase("preparing");
+
+      // Step 1: Try initialize (panics with "already initialized" if called twice)
+      try {
+        await signAndSend(PROJECT.contractId, "initialize", []);
+      } catch (e: unknown) {
+        const em = e instanceof Error ? e.message : String(e);
+        // "already initialized" is expected — not an error
+        if (!em.includes("already initialized")) {
+          console.warn("initialize() failed:", em);
+        }
+      }
+
+      // Step 2: Try create_project (panics if project #1 already exists)
+      try {
+        await signAndSend(PROJECT.contractId, "create_project", [
+          address,
+          "Solar Lima Miraflores",
+          BigInt(100_000),
+          BigInt(10_000_000),
+          BigInt(1),
+        ]);
+      } catch (e: unknown) {
+        const em = e instanceof Error ? e.message : String(e);
+        // "already initialized" or "existing" expected — not an error
+        if (
+          !em.includes("already initialized") &&
+          !em.includes("existing") &&
+          !em.includes("duplicate")
+        ) {
+          console.warn("create_project() failed:", em);
+        }
+      }
+
+      // Step 3: Purchase tokens
       setSigningPhase("signing");
       const { txHash: hash } = await signAndSend(
         PROJECT.contractId,
@@ -215,8 +248,13 @@ export default function ProjectDetailClient() {
         msg.includes("WasmVm")
       ) {
         setSigningError(
-          "Contract not initialized on testnet. Open scripts/init-contract.html and run Steps 1-2 first."
+          "Contract failed on-chain. The contract may not be deployed correctly on testnet."
         );
+        setSigningPhase("error");
+      }
+      // Detect on-chain transaction failure
+      else if (msg.includes("Transaction failed on-chain")) {
+        setSigningError(msg);
         setSigningPhase("error");
       }
       // All other errors
