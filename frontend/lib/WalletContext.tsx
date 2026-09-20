@@ -186,9 +186,8 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     async (operations: any[], signWith?: string) => {
       const sdk = await import("@stellar/stellar-sdk");
-      const SorobanRpc = await import("@stellar/stellar-sdk/rpc");
 
-      const server = new SorobanRpc.Server(SERVER_URL);
+      const server = new sdk.rpc.Server(SERVER_URL);
       const account = await server.getAccount(state.address!);
 
       const tx = new sdk.TransactionBuilder(account, {
