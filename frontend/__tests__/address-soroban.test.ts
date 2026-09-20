@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { Address, xdr } from "@stellar/stellar-sdk";
+import { Address, xdr, nativeToScVal } from "@stellar/stellar-sdk";
 
 // ═══════════════════════════════════════════════════════════
 // UNIT: Address to ScVal conversion (the XDR fix)
@@ -51,5 +51,12 @@ describe("Stellar Address to ScVal conversion", () => {
     const val = BigInt(42);
     expect(typeof val).toBe("bigint");
     expect(regex.test(val as unknown as string)).toBe(false);
+  });
+
+  it("encodes project IDs as u64 instead of u128", () => {
+    const encoded = nativeToScVal(BigInt(1), { type: "u64" });
+    expect(encoded).toBeDefined();
+    const xdrBytes = encoded.toXDR();
+    expect(Buffer.isBuffer(xdrBytes)).toBe(true);
   });
 });

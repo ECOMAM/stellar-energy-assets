@@ -42,6 +42,8 @@ export interface ContractCall {
   args: unknown[];
 }
 
+type SorobanScValType = "address" | "string" | "u64" | "u128";
+
 interface WalletContextType extends WalletState {
   connect: () => Promise<void>;
   disconnect: () => void;
@@ -150,15 +152,26 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
 
   // ── Shared helper: convert args to ScVal ──
   const toScVals = useCallback(
-    async (args: unknown[]) => {
+    async (args: unknown[], method?: string) => {
       const sdk = await import("@stellar/stellar-sdk");
-      return args.map((a: unknown) => {
+      return args.map((a: unknown, index: number) => {
         if (typeof a === "string" && /^[GC][A-Z0-9]{55}$/.test(a)) {
           return sdk.Address.fromString(a).toScVal();
         }
+
         if (typeof a === "bigint" || typeof a === "number") {
-          return sdk.nativeToScVal(a, { type: "u128" });
+          const expectedType =
+            method === "purchase_tokens" && index === 1
+              ? "u64"
+              : "u128";
+
+          if (expectedType === "u64") {
+            return sdk.nativeToScVal(BigInt(a.toString()), { type: "u64" });
+          }
+
+          return sdk.nativeToScVal(BigInt(a.toString()), { type: "u128" });
         }
+
         if (typeof a === "string") {
           return sdk.nativeToScVal(a, { type: "string" });
         }
@@ -244,7 +257,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
 
       const sdk = await import("@stellar/stellar-sdk");
       const contract = new sdk.Contract(contractId);
-      const sorobanArgs = await toScVals(args);
+      const sorobanArgs = await toScVals(args, method);
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const op = contract.call(method, ...(sorobanArgs as any[]));
@@ -263,7 +276,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       const ops = [];
       for (const call of calls) {
         const contract = new sdk.Contract(call.contractId);
-        const sorobanArgs = await toScVals(call.args);
+        const sorobanArgs = await toScVals(call.args, call.method);
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         ops.push(contract.call(call.method, ...(sorobanArgs as any[])));
       }
