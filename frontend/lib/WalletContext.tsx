@@ -1,5 +1,9 @@
 "use client";
 
+/* ── BigInt guard: MUST be first import. Patches JSON.stringify globally so
+   the Stellar SDK's internal calls don't crash on BigInt values. ── */
+import "./bigint-guard";
+
 import {
   createContext,
   useCallback,
