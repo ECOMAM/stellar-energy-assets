@@ -1,6 +1,8 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
+import PdfCertificate from "@/components/PdfCertificate";
 
 /* ──────────────────── Types ──────────────────── */
 
@@ -50,6 +52,7 @@ export default function TransactionSuccess({
   contractId,
 }: TransactionSuccessProps) {
   const [copied, setCopied] = useState(false);
+  const router = useRouter();
 
   if (!open) return null;
 
@@ -422,21 +425,19 @@ export default function TransactionSuccess({
 
             {/* CTAs */}
             <div className="flex flex-col sm:flex-row items-center gap-3 w-full sm:w-auto order-1 sm:order-2">
+              <PdfCertificate
+                data={{
+                  projectName,
+                  location: "Red Stellar Soroban",
+                  capacity: `${capacityWp} kWp`,
+                  tokenAmount: String(tokenCount),
+                  pricePaid: `${costXlm} XLM`,
+                  walletAddress,
+                  txHash,
+                }}
+              />
               <button
-                onClick={() =>
-                  alert(
-                    "Generando Certificado PDF Notariado con firma digital PKI y sello criptográfico Stellar..."
-                  )
-                }
-                className="w-full sm:w-auto px-6 py-3 rounded-lg bg-white text-slate-900 text-[14px] font-semibold shadow-sm hover:bg-slate-50 transition-all flex items-center justify-center gap-2 border border-slate-200"
-              >
-                <span className="material-symbols-outlined text-[18px] text-emerald-600">
-                  download
-                </span>
-                Descargar Certificado PDF
-              </button>
-              <button
-                onClick={onClose}
+                onClick={() => router.push("/dashboard")}
                 className="w-full sm:w-auto px-8 py-3 rounded-lg bg-emerald-600 text-white text-[14px] font-bold shadow-md hover:bg-emerald-700 transition-all flex items-center justify-center gap-2 active:scale-95"
               >
                 <span>Ir a Mi Portafolio</span>
