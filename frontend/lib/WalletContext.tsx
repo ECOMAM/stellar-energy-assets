@@ -154,10 +154,14 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       const contract = new sdk.Contract(contractId);
       const account = await server.getAccount(state.address);
 
-      // Convert Stellar address strings to ScVal for Soroban contract calls
+      // Convert all args to ScVal for Soroban contract calls.
+      // Addresses → Address.toScVal(), numbers/bigints → nativeToScVal()
       const sorobanArgs = args.map((a: unknown) => {
         if (typeof a === "string" && /^[GC][A-Z0-9]{55}$/.test(a)) {
           return sdk.Address.fromString(a).toScVal();
+        }
+        if (typeof a === "bigint" || typeof a === "number") {
+          return sdk.nativeToScVal(a, { type: "u128" });
         }
         return a;
       });
