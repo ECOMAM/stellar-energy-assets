@@ -2,30 +2,30 @@
 
 export default function Hero() {
   return (
-    <section className="relative w-full overflow-hidden pb-10 bg-gradient-to-b from-emerald-50/60 via-white to-surface">
+    <section className="relative w-full overflow-hidden pb-10 bg-gradient-to-b from-emerald-50/60 dark:from-[#0a2e1a]/60 via-white dark:via-[#171f33] to-surface">
       {/* Ambient glow effects */}
-      <div className="absolute -top-32 left-1/2 -translate-x-1/2 w-[900px] h-[500px] bg-gradient-to-b from-amber-200/20 via-emerald-100/30 to-transparent blur-[120px] pointer-events-none -z-10" />
-      <div className="absolute top-48 right-10 w-96 h-96 bg-emerald-200/20 blur-[140px] pointer-events-none -z-10" />
+      <div className="absolute -top-32 left-1/2 -translate-x-1/2 w-[900px] h-[500px] bg-gradient-to-b from-amber-200/20 dark:from-amber-200/10 via-emerald-100/30 dark:via-emerald-100/10 to-transparent blur-[120px] pointer-events-none -z-10" />
+      <div className="absolute top-48 right-10 w-96 h-96 bg-emerald-200/20 dark:bg-emerald-200/10 blur-[140px] pointer-events-none -z-10" />
 
       <div className="max-w-7xl mx-auto px-5 lg:px-10 pt-8 lg:pt-16">
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-center">
           {/* ── Left Column: Copy & CTA ── */}
           <div className="lg:col-span-7 flex flex-col items-start space-y-5">
             {/* Protocol badge */}
-            <div className="inline-flex items-center gap-3 px-5 py-2 rounded-full bg-white border border-emerald-200 shadow-sm">
+            <div className="inline-flex items-center gap-3 px-5 py-2 rounded-full bg-white dark:bg-[#222a3d] border border-emerald-200 dark:border-[#0a3d22] shadow-sm">
               <span className="relative flex h-2.5 w-2.5">
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-500 opacity-75" />
-                <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-600" />
+                <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-600 dark:bg-[#4edea3]" />
               </span>
-              <span className="font-mono text-[11px] tracking-wider text-slate-700 font-semibold uppercase">
-                Built on Stellar <span className="text-slate-400">/</span> 5s
-                settlement <span className="text-slate-400">/</span>{" "}
+              <span className="font-mono text-[11px] tracking-wider text-slate-700 dark:text-[#bbcabf] font-semibold uppercase">
+                Built on Stellar <span className="text-slate-400 dark:text-[#86948a]">/</span> 5s
+                settlement <span className="text-slate-400 dark:text-[#86948a]">/</span>{" "}
                 ~$0.00001/txn
               </span>
             </div>
 
             {/* Headline */}
-            <h1 className="font-display text-[28px] leading-[36px] lg:text-[56px] lg:leading-[64px] text-slate-900 tracking-tight font-bold max-w-2xl">
+            <h1 className="font-display text-[28px] leading-[36px] lg:text-[56px] lg:leading-[64px] text-slate-900 dark:text-[#dae2fd] tracking-tight font-bold max-w-2xl">
               Invierte en{" "}
               <span className="text-transparent bg-clip-text bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600">
                 Energía Solar
@@ -38,21 +38,21 @@ export default function Hero() {
             </h1>
 
             {/* Ledger stamp */}
-            <div className="flex items-center gap-2 text-slate-500 font-mono text-[11px]">
-              <span className="material-symbols-outlined text-emerald-600 text-[14px]">
+            <div className="flex items-center gap-2 text-slate-500 dark:text-[#86948a] font-mono text-[11px]">
+              <span className="material-symbols-outlined text-emerald-600 dark:text-[#4edea3] text-[14px]">
                 lock_open
               </span>
-              <span className="font-medium text-slate-600">
+              <span className="font-medium text-slate-600 dark:text-[#bbcabf]">
                 CONTRACT: SOROBAN-RWA-SOLAR-V2
               </span>
-              <span className="text-slate-300">•</span>
-              <span className="font-medium text-slate-600">
+              <span className="text-slate-300 dark:text-[#3c4a42]">•</span>
+              <span className="font-medium text-slate-600 dark:text-[#bbcabf]">
                 CONSENSUS: STELLAR SCP
               </span>
             </div>
 
             {/* Subheadline */}
-            <p className="font-body text-[14px] leading-[22px] lg:text-[16px] lg:leading-[26px] text-slate-600 max-w-xl">
+            <p className="font-body text-[14px] leading-[22px] lg:text-[16px] lg:leading-[26px] text-slate-600 dark:text-[#bbcabf] max-w-xl">
               Tokeniza proyectos solares en Stellar. Compra fracciones de paneles
               solares fotovoltaicos, genera energía limpia verificada por IoT y
               reclama tus recompensas on-chain instantáneamente en USDC y XLM.
@@ -69,8 +69,8 @@ export default function Hero() {
                   solar_power
                 </span>
               </a>
-              <button className="h-11 px-6 rounded-lg bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 hover:border-slate-300 text-[14px] font-semibold shadow-sm transition-all flex items-center gap-2">
-                <span className="material-symbols-outlined text-amber-500 text-[18px]">
+              <button className="h-11 px-6 rounded-lg bg-white dark:bg-[#222a3d] border border-slate-200 dark:border-[#3c4a42] text-slate-700 dark:text-[#bbcabf] hover:bg-slate-50 dark:hover:bg-[#2a3548] hover:border-slate-300 dark:hover:border-[#4edea3] text-[14px] font-semibold shadow-sm transition-all flex items-center gap-2">
+                <span className="material-symbols-outlined text-amber-500 dark:text-[#f9bd22] text-[18px]">
                   account_balance_wallet
                 </span>
                 <span>Conectar Freighter / Lobstr</span>
@@ -78,20 +78,20 @@ export default function Hero() {
             </div>
 
             {/* Trust indicators */}
-            <div className="pt-2 flex items-center gap-6 text-slate-500 font-mono text-[12px]">
+            <div className="pt-2 flex items-center gap-6 text-slate-500 dark:text-[#86948a] font-mono text-[12px]">
               <div className="flex items-center gap-2">
-                <span className="material-symbols-outlined text-emerald-600 text-[16px]">
+                <span className="material-symbols-outlined text-emerald-600 dark:text-[#4edea3] text-[16px]">
                   verified
                 </span>
-                <span className="font-medium text-slate-600">
+                <span className="font-medium text-slate-600 dark:text-[#bbcabf]">
                   Smart Contracts Auditados
                 </span>
               </div>
               <div className="flex items-center gap-2">
-                <span className="material-symbols-outlined text-amber-500 text-[16px]">
+                <span className="material-symbols-outlined text-amber-500 dark:text-[#f9bd22] text-[16px]">
                   bolt
                 </span>
-                <span className="font-medium text-slate-600">
+                <span className="font-medium text-slate-600 dark:text-[#bbcabf]">
                   IoT Telemetría 24/7
                 </span>
               </div>
@@ -100,22 +100,22 @@ export default function Hero() {
 
           {/* ── Right Column: Telemetry HUD ── */}
           <div className="lg:col-span-5 relative mt-8 lg:mt-0">
-            <div className="relative w-full rounded-xl bg-white border border-emerald-100 p-6 shadow-xl shadow-emerald-950/5 overflow-hidden">
+            <div className="relative w-full rounded-xl bg-white dark:bg-[#222a3d] border border-emerald-100 dark:border-[#0a3d22] p-6 shadow-xl shadow-emerald-950/5 dark:shadow-black/20 overflow-hidden">
               {/* HUD Header */}
-              <div className="flex items-center justify-between pb-4 border-b border-slate-100">
+              <div className="flex items-center justify-between pb-4 border-b border-slate-100 dark:border-[#3c4a42]">
                 <div className="flex items-center gap-2">
                   <div className="w-3 h-3 rounded-full bg-orange-500 animate-pulse shadow-[0_0_8px_rgba(234,88,12,0.5)]" />
-                  <span className="text-[20px] font-display font-bold text-slate-900">
+                  <span className="text-[20px] font-display font-bold text-slate-900 dark:text-[#dae2fd]">
                     Panel Telemetry HUD
                   </span>
                 </div>
-                <span className="font-mono text-[11px] px-2 py-0.5 rounded bg-emerald-50 border border-emerald-200 text-emerald-700 font-semibold">
+                <span className="font-mono text-[11px] px-2 py-0.5 rounded bg-emerald-50 dark:bg-[#0a2e1a] border border-emerald-200 dark:border-[#0a3d22] text-emerald-700 dark:text-[#4edea3] font-semibold">
                   LIVE SCP SYNC
                 </span>
               </div>
 
               {/* Solar Grid SVG */}
-              <div className="relative w-full h-48 rounded-lg bg-slate-50 border border-slate-200 overflow-hidden flex items-center justify-center p-3 mt-4">
+              <div className="relative w-full h-48 rounded-lg bg-slate-50 dark:bg-[#131b2e] border border-slate-200 dark:border-[#3c4a42] overflow-hidden flex items-center justify-center p-3 mt-4">
                 <svg
                   className="w-full h-full text-slate-300"
                   fill="none"
@@ -158,13 +158,13 @@ export default function Hero() {
                 </svg>
 
                 {/* Sensor overlays */}
-                <div className="absolute top-3 left-3 px-2 py-0.5 rounded bg-white/95 border border-slate-200 shadow-sm backdrop-blur-md">
-                  <span className="font-mono text-[12px] text-orange-600 font-semibold">
+                <div className="absolute top-3 left-3 px-2 py-0.5 rounded bg-white/95 dark:bg-[#222a3d]/95 border border-slate-200 dark:border-[#3c4a42] shadow-sm backdrop-blur-md">
+                  <span className="font-mono text-[12px] text-orange-600 dark:text-[#ffb690] font-semibold">
                     Irradiancia: 984 W/m²
                   </span>
                 </div>
-                <div className="absolute bottom-3 right-3 px-2 py-0.5 rounded bg-white/95 border border-slate-200 shadow-sm backdrop-blur-md">
-                  <span className="font-mono text-[12px] text-emerald-700 font-semibold">
+                <div className="absolute bottom-3 right-3 px-2 py-0.5 rounded bg-white/95 dark:bg-[#222a3d]/95 border border-slate-200 dark:border-[#3c4a42] shadow-sm backdrop-blur-md">
+                  <span className="font-mono text-[12px] text-emerald-700 dark:text-[#4edea3] font-semibold">
                     Inyección Red: 142.8 kWh
                   </span>
                 </div>
@@ -172,49 +172,49 @@ export default function Hero() {
 
               {/* Activity stream */}
               <div className="mt-4 space-y-2">
-                <div className="flex items-center justify-between p-3 rounded-lg bg-slate-50 border border-slate-100">
+                <div className="flex items-center justify-between p-3 rounded-lg bg-slate-50 dark:bg-[#131b2e] border border-slate-100 dark:border-[#3c4a42]">
                   <div className="flex items-center gap-3">
-                    <span className="material-symbols-outlined text-emerald-600 text-[18px]">
+                    <span className="material-symbols-outlined text-emerald-600 dark:text-[#4edea3] text-[18px]">
                       currency_exchange
                     </span>
                     <div className="flex flex-col">
-                      <span className="text-[13px] text-slate-800 font-medium">
+                      <span className="text-[13px] text-slate-800 dark:text-[#dae2fd] font-medium">
                         Yield Auto-Dispersado
                       </span>
-                      <span className="font-mono text-[12px] text-slate-500">
+                      <span className="font-mono text-[12px] text-slate-500 dark:text-[#86948a]">
                         Block #51829402 • 1.4s ago
                       </span>
                     </div>
                   </div>
                   <div className="text-right">
-                    <span className="font-mono text-[14px] text-emerald-600 font-bold">
+                    <span className="font-mono text-[14px] text-emerald-600 dark:text-[#4edea3] font-bold">
                       +1,420.50 USDC
                     </span>
-                    <div className="font-mono text-[11px] text-slate-500 font-medium">
+                    <div className="font-mono text-[11px] text-slate-500 dark:text-[#86948a] font-medium">
                       POOL_PERU_NORTE
                     </div>
                   </div>
                 </div>
 
-                <div className="flex items-center justify-between p-3 rounded-lg bg-slate-50 border border-slate-100">
+                <div className="flex items-center justify-between p-3 rounded-lg bg-slate-50 dark:bg-[#131b2e] border border-slate-100 dark:border-[#3c4a42]">
                   <div className="flex items-center gap-3">
-                    <span className="material-symbols-outlined text-orange-500 text-[18px]">
+                    <span className="material-symbols-outlined text-orange-500 dark:text-[#ffb690] text-[18px]">
                       token
                     </span>
                     <div className="flex flex-col">
-                      <span className="text-[13px] text-slate-800 font-medium">
+                      <span className="text-[13px] text-slate-800 dark:text-[#dae2fd] font-medium">
                         Compra Fracción Solar
                       </span>
-                      <span className="font-mono text-[12px] text-slate-500">
+                      <span className="font-mono text-[12px] text-slate-500 dark:text-[#86948a]">
                         GDF7...91XA via Freighter
                       </span>
                     </div>
                   </div>
                   <div className="text-right">
-                    <span className="font-mono text-[14px] text-orange-600 font-bold">
+                    <span className="font-mono text-[14px] text-orange-600 dark:text-[#ffb690] font-bold">
                       250 SUN-LIMA
                     </span>
-                    <div className="font-mono text-[11px] text-slate-500 font-medium">
+                    <div className="font-mono text-[11px] text-slate-500 dark:text-[#86948a] font-medium">
                       2,500 XLM
                     </div>
                   </div>
@@ -222,12 +222,12 @@ export default function Hero() {
               </div>
 
               {/* Contract status */}
-              <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between font-mono text-[12px]">
-                <div className="flex items-center gap-2 text-slate-500">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-600" />
+              <div className="mt-4 pt-3 border-t border-slate-100 dark:border-[#3c4a42] flex items-center justify-between font-mono text-[12px]">
+                <div className="flex items-center gap-2 text-slate-500 dark:text-[#86948a]">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-600 dark:bg-[#4edea3]" />
                   <span>Oracle Smart Meter ID: 0x8F9...A3</span>
                 </div>
-                <span className="text-emerald-700 font-bold">
+                <span className="text-emerald-700 dark:text-[#4edea3] font-bold">
                   99.98% Eficiencia
                 </span>
               </div>

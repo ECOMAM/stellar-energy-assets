@@ -25,6 +25,7 @@ const PASSPHRASE =
   process.env.NEXT_PUBLIC_STELLAR_NETWORK_PASSPHRASE ||
   "Test SDF Network ; September 2015";
 const XLM_TO_USD = 0.13;
+const CONTRACT_ID = "CB7V3676CQBO5OL6DEXI5FORLG37IR2GR7LXCZD7DUZTMSUT7BEEINR3";
 
 interface WalletState {
   address: string | null;
@@ -59,6 +60,10 @@ interface WalletContextType extends WalletState {
     signWith?: string
   ) => Promise<{ txHash: string; result?: unknown }>;
   fetchBalance: () => Promise<void>;
+  getProject: (projectId: number) => Promise<unknown>;
+  getTotalSales: (projectId: number) => Promise<unknown>;
+  getUserBalance: (userAddress: string, projectId: number) => Promise<unknown>;
+  getClaimableRevenue: (userAddress: string, projectId: number) => Promise<unknown>;
 }
 
 const WalletContext = createContext<WalletContextType | null>(null);
@@ -300,6 +305,53 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     [state.address, toScVals, buildSignSendPoll]
   );
 
+  // ── Read-only contract getters (use simulateTransaction) ──
+
+  /** Helper: simulate a contract call without submitting */
+  const simulateCall = useCallback(
+    async (method: string, args: unknown[]) => {
+      const sdk = await import("@stellar/stellar-sdk");
+      const server = new sdk.rpc.Server(SERVER_URL);
+      const contract = new sdk.Contract(CONTRACT_ID);
+      // Use a dummy source account for simulation
+      const source = new sdk.Account(
+        "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
+        "0"
+      );
+      const sorobanArgs = await toScVals(args, method);
+      const op = contract.call(method, ...(sorobanArgs as any[]));
+      const tx = new sdk.TransactionBuilder(source, {
+        fee: "100",
+        networkPassphrase: PASSPHRASE,
+      })
+        .addOperation(op)
+        .setTimeout(0)
+        .build();
+      return server.simulateTransaction(tx);
+    },
+    [toScVals]
+  );
+
+  /** Read a single project's data from the contract */
+  const getProject = useCallback(async (projectId: number) => {
+    return simulateCall("get_project", [BigInt(projectId)]);
+  }, [simulateCall]);
+
+  /** Get total sales for a project */
+  const getTotalSales = useCallback(async (projectId: number) => {
+    return simulateCall("get_total_sales", [BigInt(projectId)]);
+  }, [simulateCall]);
+
+  /** Get a user's token balance for a project */
+  const getUserBalance = useCallback(async (userAddress: string, projectId: number) => {
+    return simulateCall("get_user_balance", [userAddress, BigInt(projectId)]);
+  }, [simulateCall]);
+
+  /** Get claimable revenue for a user on a project */
+  const getClaimableRevenue = useCallback(async (userAddress: string, projectId: number) => {
+    return simulateCall("get_claimable_revenue", [userAddress, BigInt(projectId)]);
+  }, [simulateCall]);
+
   // Auto-reconnect on mount (client-only)
   useEffect(() => {
     if (!mounted) return;
@@ -337,6 +389,10 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         signAndSend,
         signAndSendBatch,
         fetchBalance,
+        getProject,
+        getTotalSales,
+        getUserBalance,
+        getClaimableRevenue,
       }}
     >
       {children}

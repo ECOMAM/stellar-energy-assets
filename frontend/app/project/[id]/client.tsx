@@ -139,6 +139,63 @@ export default function ProjectDetailClient() {
     setSigningOpen(true);
   }, [connected, connect]);
 
+  /* ── Revenue deposit ── */
+  const [depositLoading, setDepositLoading] = useState(false);
+  const handleDepositRevenue = useCallback(async () => {
+    if (!connected || !address) { connect(); return; }
+    setDepositLoading(true);
+    try {
+      await signAndSend(
+        PROJECT.contractId,
+        "deposit_revenue",
+        [BigInt(1), BigInt(Math.round(45200 * 1_000_000))]
+      );
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error("Deposit revenue failed:", msg);
+    } finally {
+      setDepositLoading(false);
+    }
+  }, [connected, address, connect, signAndSend]);
+
+  /* ── Claim revenue ── */
+  const [claimLoading, setClaimLoading] = useState(false);
+  const handleClaimRevenue = useCallback(async () => {
+    if (!connected || !address) { connect(); return; }
+    setClaimLoading(true);
+    try {
+      await signAndSend(
+        PROJECT.contractId,
+        "claim_revenue",
+        [address, BigInt(1)]
+      );
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error("Claim revenue failed:", msg);
+    } finally {
+      setClaimLoading(false);
+    }
+  }, [connected, address, connect, signAndSend]);
+
+  /* ── Withdraw sales ── */
+  const [withdrawLoading, setWithdrawLoading] = useState(false);
+  const handleWithdraw = useCallback(async () => {
+    if (!connected || !address) { connect(); return; }
+    setWithdrawLoading(true);
+    try {
+      await signAndSend(
+        PROJECT.contractId,
+        "withdraw_sales",
+        [address, BigInt(1)]
+      );
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error("Withdraw failed:", msg);
+    } finally {
+      setWithdrawLoading(false);
+    }
+  }, [connected, address, connect, signAndSend]);
+
   const executeBuy = useCallback(async () => {
     // Edge case: wallet not connected (shouldn't happen if modal opened, but guard)
     if (!connected || !address) {
@@ -235,16 +292,16 @@ export default function ProjectDetailClient() {
   ];
 
   return (
-    <div className="relative min-h-screen bg-slate-50 font-body text-slate-900">
+    <div className="relative min-h-screen bg-slate-50 dark:bg-[#131b2e] font-body text-slate-900 dark:text-[#dae2fd]">
       {/* ═══════════ A) Ambient glow background ═══════════ */}
       <div className="pointer-events-none fixed inset-0 -z-10 overflow-hidden">
-        <div className="absolute -top-40 left-1/4 h-[600px] w-[900px] rounded-full bg-gradient-to-br from-emerald-200/25 via-emerald-100/15 to-transparent blur-[160px]" />
-        <div className="absolute top-1/3 -right-20 h-[500px] w-[500px] rounded-full bg-gradient-to-br from-orange-200/20 via-amber-100/10 to-transparent blur-[140px]" />
-        <div className="absolute bottom-0 left-1/2 h-[400px] w-[800px] -translate-x-1/2 rounded-full bg-gradient-to-t from-emerald-100/20 to-transparent blur-[120px]" />
+        <div className="absolute -top-40 left-1/4 h-[600px] w-[900px] rounded-full bg-gradient-to-br from-emerald-200/25 dark:from-emerald-200/10 via-emerald-100/15 to-transparent blur-[160px]" />
+        <div className="absolute top-1/3 -right-20 h-[500px] w-[500px] rounded-full bg-gradient-to-br from-orange-200/20 dark:from-orange-200/10 via-amber-100/10 to-transparent blur-[140px]" />
+        <div className="absolute bottom-0 left-1/2 h-[400px] w-[800px] -translate-x-1/2 rounded-full bg-gradient-to-t from-emerald-100/20 dark:from-emerald-100/10 to-transparent blur-[120px]" />
       </div>
 
       {/* ═══════════ B) Fixed header ═══════════ */}
-      <header className="fixed top-0 left-0 right-0 z-50 border-b border-slate-200/70 bg-white/85 backdrop-blur-xl shadow-sm">
+      <header className="fixed top-0 left-0 right-0 z-50 border-b border-slate-200/70 dark:border-[#3c4a42]/70 bg-white/85 dark:bg-[#171f33]/85 backdrop-blur-xl shadow-sm">
         <div className="mx-auto flex h-14 max-w-7xl items-center justify-between px-5 lg:px-10">
           <a
             href="/"
@@ -274,8 +331,8 @@ export default function ProjectDetailClient() {
       {/* ═══════════ Main ═══════════ */}
       <main className="mx-auto max-w-7xl px-5 lg:px-10 pt-20 pb-20">
         {/* ═══════════ C) Breadcrumb ═══════════ */}
-        <nav className="mb-6 flex items-center gap-2 text-[13px] text-slate-500">
-          <a href="/" className="hover:text-slate-900 transition-colors">
+        <nav className="mb-6 flex items-center gap-2 text-[13px] text-slate-500 dark:text-[#86948a]">
+          <a href="/" className="hover:text-slate-900 dark:hover:text-[#dae2fd] transition-colors">
             Proyectos Solares
           </a>
           <span className="material-symbols-outlined text-[14px]">
@@ -285,11 +342,11 @@ export default function ProjectDetailClient() {
           <span className="material-symbols-outlined text-[14px]">
             chevron_right
           </span>
-          <span className="font-medium text-slate-900">
+          <span className="font-medium text-slate-900 dark:text-[#dae2fd]">
             Lima Norte (150 kWp)
           </span>
-          <span className="ml-2 inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold text-emerald-700">
-            <span className="h-1 w-1 rounded-full bg-emerald-500 animate-pulse" />
+          <span className="ml-2 inline-flex items-center gap-1 rounded-full border border-emerald-200 dark:border-[#0a3d22] bg-emerald-50 dark:bg-[#0a2e1a] px-2 py-0.5 text-[10px] font-semibold text-emerald-700 dark:text-[#4edea3]">
+            <span className="h-1 w-1 rounded-full bg-emerald-500 dark:bg-[#4edea3] animate-pulse" />
             IoT Oracle Activo
           </span>
         </nav>
@@ -297,24 +354,24 @@ export default function ProjectDetailClient() {
         {/* ═══════════ D) Project header ═══════════ */}
         <div className="mb-8">
           <div className="mb-3 flex flex-wrap items-center gap-2">
-            <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-0.5 text-[11px] font-semibold text-emerald-700">
+            <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200 dark:border-[#0a3d22] bg-emerald-50 dark:bg-[#0a2e1a] px-2.5 py-0.5 text-[11px] font-semibold text-emerald-700 dark:text-[#4edea3]">
               PPA Activo &mdash; 10 A&ntilde;os
             </span>
-            <span className="inline-flex items-center gap-1 rounded-full border border-blue-200 bg-blue-50 px-2.5 py-0.5 text-[11px] font-semibold text-blue-700">
+            <span className="inline-flex items-center gap-1 rounded-full border border-blue-200 dark:border-blue-700 bg-blue-50 dark:bg-blue-950/50 px-2.5 py-0.5 text-[11px] font-semibold text-blue-700 dark:text-blue-400">
               <span className="material-symbols-outlined text-[12px]">
                 verified
               </span>
               Auditor&iacute;a Legal Verificada
             </span>
-            <span className="font-mono text-[11px] text-slate-400">
+            <span className="font-mono text-[11px] text-slate-400 dark:text-[#86948a]">
               Asset ID: {PROJECT.assetId}
             </span>
           </div>
 
-          <h1 className="font-display text-[32px] font-bold leading-tight text-slate-900 lg:text-[42px]">
+          <h1 className="font-display text-[32px] font-bold leading-tight text-slate-900 dark:text-[#dae2fd] lg:text-[42px]">
             {PROJECT.name} {PROJECT.flag}
           </h1>
-          <p className="mt-2 max-w-2xl text-[14px] leading-relaxed text-slate-600">
+          <p className="mt-2 max-w-2xl text-[14px] leading-relaxed text-slate-600 dark:text-[#bbcabf]">
             Parque solar fotovoltaico de 150 kWp en Lima Norte, con Power
             Purchase Agreement (PPA) a 10 a&ntilde;os. Producci&oacute;n verificada por IoT
             en tiempo real, dividendos distribuidos on-chain via smart contracts
@@ -322,24 +379,24 @@ export default function ProjectDetailClient() {
           </p>
 
           <div className="mt-4 flex flex-wrap items-center gap-3">
-            <button className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2 text-[13px] font-medium text-slate-700 shadow-sm transition-all hover:bg-slate-50">
+            <button className="inline-flex items-center gap-2 rounded-lg border border-slate-200 dark:border-[#3c4a42] bg-white dark:bg-[#222a3d] px-4 py-2 text-[13px] font-medium text-slate-700 dark:text-[#bbcabf] shadow-sm transition-all hover:bg-slate-50 dark:hover:bg-[#2a3548]">
               <span className="material-symbols-outlined text-[16px]">
                 description
               </span>
-              Ficha T\u00E9cnica PDF
+              Ficha T&eacute;cnica PDF
             </button>
             <a
               href={`https://stellar.expert/testnet/contract/${PROJECT.contractId}`}
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2 text-[13px] font-medium text-slate-700 shadow-sm transition-all hover:bg-slate-50"
+              className="inline-flex items-center gap-2 rounded-lg border border-slate-200 dark:border-[#3c4a42] bg-white dark:bg-[#222a3d] px-4 py-2 text-[13px] font-medium text-slate-700 dark:text-[#bbcabf] shadow-sm transition-all hover:bg-slate-50 dark:hover:bg-[#2a3548]"
             >
               <span className="material-symbols-outlined text-[16px]">
                 open_in_new
               </span>
               Ver en Soroban Explorer
             </a>
-            <span className="font-mono text-[11px] text-slate-400">
+            <span className="font-mono text-[11px] text-slate-400 dark:text-[#86948a]">
               {shortAddr(PROJECT.contractId)}
             </span>
           </div>
@@ -401,17 +458,17 @@ export default function ProjectDetailClient() {
           ].map((m, i) => (
             <div
               key={i}
-              className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"
+              className="rounded-xl border border-slate-200 dark:border-[#3c4a42] bg-white dark:bg-[#222a3d] p-4 shadow-sm"
             >
               <span
                 className={`material-symbols-outlined mb-1.5 text-[20px] ${m.color}`}
               >
                 {m.icon}
               </span>
-              <div className="text-[12px] font-medium text-slate-500">
+              <div className="text-[12px] font-medium text-slate-500 dark:text-[#86948a]">
                 {m.label}
               </div>
-              <div className="font-mono text-[18px] font-bold text-slate-900">
+              <div className="font-mono text-[18px] font-bold text-slate-900 dark:text-[#dae2fd]">
                 {m.value}
               </div>
               {m.extra}
@@ -424,7 +481,7 @@ export default function ProjectDetailClient() {
           {/* ──── LEFT COLUMN (8 cols) ──── */}
           <div className="space-y-8 lg:col-span-8">
             {/* Hero image */}
-            <div className="relative overflow-hidden rounded-2xl border border-slate-200 shadow-lg">
+            <div className="relative overflow-hidden rounded-2xl border border-slate-200 dark:border-[#3c4a42] shadow-lg">
               <img
                 src={PROJECT.heroImage}
                 alt="Parque Solar Lima Norte"
@@ -448,41 +505,41 @@ export default function ProjectDetailClient() {
             </div>
 
             {/* Location metadata */}
-            <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-              <h3 className="mb-4 font-display text-[16px] font-bold text-slate-900">
+            <div className="rounded-2xl border border-slate-200 dark:border-[#3c4a42] bg-white dark:bg-[#222a3d] p-6 shadow-sm">
+              <h3 className="mb-4 font-display text-[16px] font-bold text-slate-900 dark:text-[#dae2fd]">
                 Informaci&oacute;n del Activo
               </h3>
               <div className="grid gap-4 sm:grid-cols-3">
-                <div className="rounded-lg bg-slate-50 p-4">
-                  <div className="mb-1 text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+                <div className="rounded-lg bg-slate-50 dark:bg-[#131b2e] p-4">
+                  <div className="mb-1 text-[11px] font-semibold uppercase tracking-wider text-slate-400 dark:text-[#86948a]">
                     Ubicaci&oacute;n
                   </div>
-                  <div className="text-[14px] font-medium text-slate-900">
+                  <div className="text-[14px] font-medium text-slate-900 dark:text-[#dae2fd]">
                     {PROJECT.location}
                   </div>
-                  <div className="mt-1 font-mono text-[12px] text-slate-500">
+                  <div className="mt-1 font-mono text-[12px] text-slate-500 dark:text-[#86948a]">
                     {PROJECT.coords}
                   </div>
                 </div>
-                <div className="rounded-lg bg-slate-50 p-4">
-                  <div className="mb-1 text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+                <div className="rounded-lg bg-slate-50 dark:bg-[#131b2e] p-4">
+                  <div className="mb-1 text-[11px] font-semibold uppercase tracking-wider text-slate-400 dark:text-[#86948a]">
                     SUNARP
                   </div>
-                  <div className="text-[14px] font-medium text-slate-900">
+                  <div className="text-[14px] font-medium text-slate-900 dark:text-[#dae2fd]">
                     Partida N&deg; {PROJECT.sunarpPartida}
                   </div>
-                  <div className="mt-1 font-mono text-[12px] text-slate-500">
+                  <div className="mt-1 font-mono text-[12px] text-slate-500 dark:text-[#86948a]">
                     Registro de Propiedad
                   </div>
                 </div>
-                <div className="rounded-lg bg-slate-50 p-4">
-                  <div className="mb-1 text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+                <div className="rounded-lg bg-slate-50 dark:bg-[#131b2e] p-4">
+                  <div className="mb-1 text-[11px] font-semibold uppercase tracking-wider text-slate-400 dark:text-[#86948a]">
                     Punto de Inyecci&oacute;n
                   </div>
-                  <div className="text-[14px] font-medium text-slate-900">
+                  <div className="text-[14px] font-medium text-slate-900 dark:text-[#dae2fd]">
                     {PROJECT.inyeccionLinea}
                   </div>
-                  <div className="mt-1 font-mono text-[12px] text-slate-500">
+                  <div className="mt-1 font-mono text-[12px] text-slate-500 dark:text-[#86948a]">
                     ENEL Distribuci&oacute;n
                   </div>
                 </div>
@@ -490,15 +547,15 @@ export default function ProjectDetailClient() {
             </div>
 
             {/* IoT Telemetry section */}
-            <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+            <div className="rounded-2xl border border-slate-200 dark:border-[#3c4a42] bg-white dark:bg-[#222a3d] p-6 shadow-sm">
               <div className="mb-4 flex items-center justify-between">
-                <h3 className="flex items-center gap-2 font-display text-[16px] font-bold text-slate-900">
-                  <span className="material-symbols-outlined text-[20px] text-emerald-600">
+                <h3 className="flex items-center gap-2 font-display text-[16px] font-bold text-slate-900 dark:text-[#dae2fd]">
+                  <span className="material-symbols-outlined text-[20px] text-emerald-600 dark:text-[#4edea3]">
                     sensors
                   </span>
                   Telemetr&iacute;a IoT en Tiempo Real
                 </h3>
-                <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold text-emerald-700">
+                <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200 dark:border-[#0a3d22] bg-emerald-50 dark:bg-[#0a2e1a] px-2 py-0.5 text-[10px] font-semibold text-emerald-700 dark:text-[#4edea3]">
                   <span className="material-symbols-outlined text-[10px]">
                     key
                   </span>
@@ -507,7 +564,7 @@ export default function ProjectDetailClient() {
               </div>
 
               {/* Time switcher tabs */}
-              <div className="mb-5 flex gap-1 rounded-lg bg-slate-100 p-1">
+              <div className="mb-5 flex gap-1 rounded-lg bg-slate-100 dark:bg-[#131b2e] p-1">
                 {(["Hoy", "7 D\u00EDas", "Este Mes", "Hist\u00F3rico"] as const).map(
                   (tab) => (
                     <button
@@ -515,8 +572,8 @@ export default function ProjectDetailClient() {
                       onClick={() => setTelemetryTab(tab)}
                       className={`flex-1 rounded-md px-3 py-1.5 text-[12px] font-medium transition-all ${
                         telemetryTab === tab
-                          ? "bg-white text-slate-900 shadow-sm"
-                          : "text-slate-500 hover:text-slate-900"
+                          ? "bg-white dark:bg-[#222a3d] text-slate-900 dark:text-[#dae2fd] shadow-sm"
+                          : "text-slate-500 dark:text-[#86948a] hover:text-slate-900 dark:hover:text-[#dae2fd]"
                       }`}
                     >
                       {tab}
@@ -559,27 +616,27 @@ export default function ProjectDetailClient() {
                 ].map((g, i) => (
                   <div
                     key={i}
-                    className="rounded-lg border border-slate-100 bg-slate-50 p-3 text-center"
+                    className="rounded-lg border border-slate-100 dark:border-[#3c4a42] bg-slate-50 dark:bg-[#131b2e] p-3 text-center"
                   >
                     <span
                       className={`material-symbols-outlined mb-1 text-[18px] ${g.color}`}
                     >
                       {g.icon}
                     </span>
-                    <div className="font-mono text-[22px] font-bold text-slate-900">
+                    <div className="font-mono text-[22px] font-bold text-slate-900 dark:text-[#dae2fd]">
                       {g.value}
-                      <span className="ml-0.5 text-[12px] font-medium text-slate-500">
+                      <span className="ml-0.5 text-[12px] font-medium text-slate-500 dark:text-[#86948a]">
                         {g.unit}
                       </span>
                     </div>
-                    <div className="text-[11px] text-slate-400">{g.label}</div>
+                    <div className="text-[11px] text-slate-400 dark:text-[#86948a]">{g.label}</div>
                   </div>
                 ))}
               </div>
 
               {/* SVG solar production curve */}
-              <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
-                <div className="mb-2 text-[12px] font-medium text-slate-500">
+              <div className="rounded-lg border border-slate-200 dark:border-[#3c4a42] bg-slate-50 dark:bg-[#131b2e] p-4">
+                <div className="mb-2 text-[12px] font-medium text-slate-500 dark:text-[#86948a]">
                   Curva de Producci&oacute;n Solar &mdash; {telemetryTab}
                 </div>
                 <svg
@@ -649,8 +706,8 @@ export default function ProjectDetailClient() {
             </div>
 
             {/* Legal & Financial Architecture (RWA) */}
-            <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-              <h3 className="mb-4 font-display text-[16px] font-bold text-slate-900">
+            <div className="rounded-2xl border border-slate-200 dark:border-[#3c4a42] bg-white dark:bg-[#222a3d] p-6 shadow-sm">
+              <h3 className="mb-4 font-display text-[16px] font-bold text-slate-900 dark:text-[#dae2fd]">
                 Arquitectura Legal y Financiera (RWA)
               </h3>
               <div className="grid gap-4 sm:grid-cols-3">
@@ -676,15 +733,15 @@ export default function ProjectDetailClient() {
                 ].map((item, i) => (
                   <div
                     key={i}
-                    className={`rounded-lg border border-slate-100 border-l-4 ${item.accent} bg-slate-50 p-4`}
+                    className={`rounded-lg border border-slate-100 dark:border-[#3c4a42] border-l-4 ${item.accent} bg-slate-50 dark:bg-[#131b2e] p-4`}
                   >
-                    <span className="material-symbols-outlined mb-2 text-[24px] text-slate-700">
+                    <span className="material-symbols-outlined mb-2 text-[24px] text-slate-700 dark:text-[#bbcabf]">
                       {item.icon}
                     </span>
-                    <div className="mb-1 font-display text-[14px] font-bold text-slate-900">
+                    <div className="mb-1 font-display text-[14px] font-bold text-slate-900 dark:text-[#dae2fd]">
                       {item.title}
                     </div>
-                    <div className="text-[13px] leading-relaxed text-slate-600">
+                    <div className="text-[13px] leading-relaxed text-slate-600 dark:text-[#bbcabf]">
                       {item.desc}
                     </div>
                   </div>
@@ -693,27 +750,27 @@ export default function ProjectDetailClient() {
             </div>
 
             {/* Dividend Distribution table */}
-            <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-              <h3 className="mb-4 font-display text-[16px] font-bold text-slate-900">
+            <div className="rounded-2xl border border-slate-200 dark:border-[#3c4a42] bg-white dark:bg-[#222a3d] p-6 shadow-sm">
+              <h3 className="mb-4 font-display text-[16px] font-bold text-slate-900 dark:text-[#dae2fd]">
                 Distribuci&oacute;n de Dividendos
               </h3>
               <div className="overflow-x-auto">
                 <table className="w-full text-left text-[13px]">
                   <thead>
-                    <tr className="border-b border-slate-200">
-                      <th className="pb-2 pr-4 font-semibold text-slate-500">
+                    <tr className="border-b border-slate-200 dark:border-[#3c4a42]">
+                      <th className="pb-2 pr-4 font-semibold text-slate-500 dark:text-[#86948a]">
                         Fecha
                       </th>
-                      <th className="pb-2 pr-4 font-semibold text-slate-500">
+                      <th className="pb-2 pr-4 font-semibold text-slate-500 dark:text-[#86948a]">
                         kWh
                       </th>
-                      <th className="pb-2 pr-4 font-semibold text-slate-500">
+                      <th className="pb-2 pr-4 font-semibold text-slate-500 dark:text-[#86948a]">
                         Total
                       </th>
-                      <th className="pb-2 pr-4 font-semibold text-slate-500">
+                      <th className="pb-2 pr-4 font-semibold text-slate-500 dark:text-[#86948a]">
                         Rendimiento/Token
                       </th>
-                      <th className="pb-2 font-semibold text-slate-500">
+                      <th className="pb-2 font-semibold text-slate-500 dark:text-[#86948a]">
                         Hash Stellar
                       </th>
                     </tr>
@@ -722,23 +779,23 @@ export default function ProjectDetailClient() {
                     {DIVIDENDS.map((d, i) => (
                       <tr
                         key={i}
-                        className="border-b border-slate-100 last:border-0"
+                        className="border-b border-slate-100 dark:border-[#3c4a42] last:border-0"
                       >
-                        <td className="py-3 pr-4 font-medium text-slate-900">
+                        <td className="py-3 pr-4 font-medium text-slate-900 dark:text-[#dae2fd]">
                           {d.fecha}
                         </td>
-                        <td className="py-3 pr-4 font-mono text-slate-700">
+                        <td className="py-3 pr-4 font-mono text-slate-700 dark:text-[#bbcabf]">
                           {d.kwh}
                         </td>
-                        <td className="py-3 pr-4 font-mono font-semibold text-emerald-600">
+                        <td className="py-3 pr-4 font-mono font-semibold text-emerald-600 dark:text-[#4edea3]">
                           {d.total}
                         </td>
-                        <td className="py-3 pr-4 font-mono text-slate-700">
+                        <td className="py-3 pr-4 font-mono text-slate-700 dark:text-[#bbcabf]">
                           {d.rendimiento}
                         </td>
                         <td className="py-3">
-                          <span className="inline-flex items-center gap-1 rounded bg-slate-100 px-2 py-0.5 font-mono text-[12px] text-slate-600">
-                            <span className="material-symbols-outlined text-[12px] text-emerald-600">
+                          <span className="inline-flex items-center gap-1 rounded bg-slate-100 dark:bg-[#131b2e] px-2 py-0.5 font-mono text-[12px] text-slate-600 dark:text-[#bbcabf]">
+                            <span className="material-symbols-outlined text-[12px] text-emerald-600 dark:text-[#4edea3]">
                               link
                             </span>
                             {d.hash}
@@ -752,30 +809,30 @@ export default function ProjectDetailClient() {
             </div>
 
             {/* Downloadable Legal Documents */}
-            <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-              <h3 className="mb-4 font-display text-[16px] font-bold text-slate-900">
+            <div className="rounded-2xl border border-slate-200 dark:border-[#3c4a42] bg-white dark:bg-[#222a3d] p-6 shadow-sm">
+              <h3 className="mb-4 font-display text-[16px] font-bold text-slate-900 dark:text-[#dae2fd]">
                 Documentos Legales Descargables
               </h3>
               <div className="grid gap-3 sm:grid-cols-2">
                 {LEGAL_DOCS.map((doc, i) => (
                   <div
                     key={i}
-                    className="flex items-center justify-between rounded-lg border border-slate-100 bg-slate-50 p-4 transition-colors hover:bg-slate-100"
+                    className="flex items-center justify-between rounded-lg border border-slate-100 dark:border-[#3c4a42] bg-slate-50 dark:bg-[#131b2e] p-4 transition-colors hover:bg-slate-100 dark:hover:bg-[#222a3d]"
                   >
                     <div className="flex items-center gap-3">
                       <span className="material-symbols-outlined text-[20px] text-red-500">
                         {doc.icon}
                       </span>
                       <div>
-                        <div className="text-[13px] font-medium text-slate-900">
+                        <div className="text-[13px] font-medium text-slate-900 dark:text-[#dae2fd]">
                           {doc.name}
                         </div>
-                        <div className="font-mono text-[11px] text-slate-400 uppercase">
+                        <div className="font-mono text-[11px] text-slate-400 dark:text-[#86948a] uppercase">
                           .{doc.ext}
                         </div>
                       </div>
                     </div>
-                    <button className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-3 py-1.5 text-[12px] font-medium text-slate-700 shadow-sm transition-all hover:bg-slate-50">
+                    <button className="inline-flex items-center gap-1 rounded-md border border-slate-200 dark:border-[#3c4a42] bg-white dark:bg-[#222a3d] px-3 py-1.5 text-[12px] font-medium text-slate-700 dark:text-[#bbcabf] shadow-sm transition-all hover:bg-slate-50 dark:hover:bg-[#2a3548]">
                       <span className="material-symbols-outlined text-[14px]">
                         download
                       </span>
@@ -791,14 +848,14 @@ export default function ProjectDetailClient() {
           <div className="lg:col-span-4">
             <div className="sticky top-20 space-y-4">
               {/* Investment widget card */}
-              <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-lg">
+              <div className="overflow-hidden rounded-2xl border border-slate-200 dark:border-[#3c4a42] bg-white dark:bg-[#222a3d] shadow-lg">
                 {/* Card header */}
-                <div className="border-b border-slate-100 bg-gradient-to-r from-emerald-50 to-orange-50 px-6 py-4">
+                <div className="border-b border-slate-100 dark:border-[#3c4a42] bg-gradient-to-r from-emerald-50 dark:from-[#0a2e1a] to-orange-50 dark:to-[#2a1500] px-6 py-4">
                   <div className="flex items-center justify-between">
-                    <span className="font-display text-[14px] font-bold text-slate-900">
+                    <span className="font-display text-[14px] font-bold text-slate-900 dark:text-[#dae2fd]">
                       Inversi&oacute;n Directa Soroban
                     </span>
-                    <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-bold text-emerald-700">
+                    <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 dark:bg-[#0a2e1a] px-2 py-0.5 text-[11px] font-bold text-emerald-700 dark:text-[#4edea3]">
                       <span className="material-symbols-outlined text-[12px]">
                         trending_up
                       </span>
@@ -809,15 +866,15 @@ export default function ProjectDetailClient() {
 
                 {/* Currency selector */}
                 <div className="px-6 pt-5">
-                  <div className="mb-3 flex gap-1 rounded-lg bg-slate-100 p-1">
+                  <div className="mb-3 flex gap-1 rounded-lg bg-slate-100 dark:bg-[#131b2e] p-1">
                     {(["XLM", "USDC"] as const).map((c) => (
                       <button
                         key={c}
                         onClick={() => setCurrency(c)}
                         className={`flex-1 rounded-md py-1.5 text-[12px] font-semibold transition-all ${
                           currency === c
-                            ? "bg-white text-slate-900 shadow-sm"
-                            : "text-slate-500 hover:text-slate-900"
+                            ? "bg-white dark:bg-[#222a3d] text-slate-900 dark:text-[#dae2fd] shadow-sm"
+                            : "text-slate-500 dark:text-[#86948a] hover:text-slate-900 dark:hover:text-[#dae2fd]"
                         }`}
                       >
                         {c}
@@ -828,7 +885,7 @@ export default function ProjectDetailClient() {
 
                 {/* Token input + pills */}
                 <div className="px-6 pb-4">
-                  <label className="mb-1.5 block text-[12px] font-medium text-slate-500">
+                  <label className="mb-1.5 block text-[12px] font-medium text-slate-500 dark:text-[#86948a]">
                     Cantidad de Tokens
                   </label>
                   <input
@@ -838,21 +895,21 @@ export default function ProjectDetailClient() {
                     onChange={(e) =>
                       setTokenCount(Math.max(1, parseInt(e.target.value) || 1))
                     }
-                    className="mb-3 w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 font-mono text-[24px] font-bold text-slate-900 outline-none transition-all focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20"
+                    className="mb-3 w-full rounded-xl border border-slate-200 dark:border-[#3c4a42] bg-slate-50 dark:bg-[#131b2e] px-4 py-3 font-mono text-[24px] font-bold text-slate-900 dark:text-[#dae2fd] outline-none transition-all focus:border-emerald-500 dark:focus:border-[#4edea3] focus:ring-2 focus:ring-emerald-500/20"
                   />
                   <div className="mb-4 flex gap-2">
                     {[10, 50, 100].map((n) => (
                       <button
                         key={n}
                         onClick={() => setTokenCount(n)}
-                        className="flex-1 rounded-lg border border-slate-200 bg-white py-1.5 text-[12px] font-semibold text-slate-600 transition-all hover:border-emerald-300 hover:bg-emerald-50 hover:text-emerald-700"
+                        className="flex-1 rounded-lg border border-slate-200 dark:border-[#3c4a42] bg-white dark:bg-[#222a3d] py-1.5 text-[12px] font-semibold text-slate-600 dark:text-[#bbcabf] transition-all hover:border-emerald-300 dark:hover:border-[#4edea3] hover:bg-emerald-50 dark:hover:bg-[#0a2e1a] hover:text-emerald-700 dark:hover:text-[#4edea3]"
                       >
                         +{n}
                       </button>
                     ))}
                     <button
                       onClick={() => setTokenCount(PROJECT.totalSupply - PROJECT.soldSupply)}
-                      className="flex-1 rounded-lg border border-slate-200 bg-white py-1.5 text-[12px] font-semibold text-slate-600 transition-all hover:border-orange-300 hover:bg-orange-50 hover:text-orange-700"
+                      className="flex-1 rounded-lg border border-slate-200 dark:border-[#3c4a42] bg-white dark:bg-[#222a3d] py-1.5 text-[12px] font-semibold text-slate-600 dark:text-[#bbcabf] transition-all hover:border-orange-300 dark:hover:border-[#ffb690] hover:bg-orange-50 dark:hover:bg-[#2a1500] hover:text-orange-700 dark:hover:text-[#ffb690]"
                     >
                       M&aacute;x
                     </button>
@@ -860,39 +917,39 @@ export default function ProjectDetailClient() {
                 </div>
 
                 {/* Real-time calculated metrics */}
-                <div className="mx-6 mb-4 space-y-2 rounded-xl bg-slate-50 p-4">
+                <div className="mx-6 mb-4 space-y-2 rounded-xl bg-slate-50 dark:bg-[#131b2e] p-4">
                   <div className="flex justify-between text-[13px]">
-                    <span className="text-slate-500">Costo Total</span>
-                    <span className="font-mono font-bold text-slate-900">
+                    <span className="text-slate-500 dark:text-[#86948a]">Costo Total</span>
+                    <span className="font-mono font-bold text-slate-900 dark:text-[#dae2fd]">
                       {fmt(costXlm, 0)} XLM
-                      <span className="ml-1 text-[11px] font-normal text-slate-400">
+                      <span className="ml-1 text-[11px] font-normal text-slate-400 dark:text-[#86948a]">
                         (${fmt(costUsd)} USD)
                       </span>
                     </span>
                   </div>
                   <div className="flex justify-between text-[13px]">
-                    <span className="text-slate-500">
+                    <span className="text-slate-500 dark:text-[#86948a]">
                       Capacidad Adjudicada
                     </span>
-                    <span className="font-mono font-bold text-emerald-600">
+                    <span className="font-mono font-bold text-emerald-600 dark:text-[#4edea3]">
                       {fmt(capacityAdjudicada, 1)} Wp
                     </span>
                   </div>
                   <div className="flex justify-between text-[13px]">
-                    <span className="text-slate-500">Retorno Diario</span>
-                    <span className="font-mono font-bold text-emerald-600">
+                    <span className="text-slate-500 dark:text-[#86948a]">Retorno Diario</span>
+                    <span className="font-mono font-bold text-emerald-600 dark:text-[#4edea3]">
                       {fmt(retornoDiario)} XLM
                     </span>
                   </div>
                   <div className="flex justify-between text-[13px]">
-                    <span className="text-slate-500">Retorno Anual</span>
-                    <span className="font-mono font-bold text-emerald-600">
+                    <span className="text-slate-500 dark:text-[#86948a]">Retorno Anual</span>
+                    <span className="font-mono font-bold text-emerald-600 dark:text-[#4edea3]">
                       {fmt(retornoAnual)} XLM
                     </span>
                   </div>
                   <div className="flex justify-between text-[13px]">
-                    <span className="text-slate-500">CO&#x2082; Mitigado</span>
-                    <span className="font-mono font-bold text-emerald-600">
+                    <span className="text-slate-500 dark:text-[#86948a]">CO&#x2082; Mitigado</span>
+                    <span className="font-mono font-bold text-emerald-600 dark:text-[#4edea3]">
                       {fmt(co2Mitigado, 2)} ton/a&ntilde;o
                     </span>
                   </div>
@@ -901,25 +958,25 @@ export default function ProjectDetailClient() {
                 {/* Wallet pill */}
                 <div className="px-6 pb-4">
                   {!mounted ? (
-                    <div className="mb-3 flex w-full items-center justify-center gap-2 rounded-full border border-slate-200 bg-slate-50 py-2">
-                      <span className="h-4 w-4 rounded-full bg-slate-200 animate-pulse" />
+                    <div className="mb-3 flex w-full items-center justify-center gap-2 rounded-full border border-slate-200 dark:border-[#3c4a42] bg-slate-50 dark:bg-[#131b2e] py-2">
+                      <span className="h-4 w-4 rounded-full bg-slate-200 dark:bg-[#3c4a42] animate-pulse" />
                     </div>
                   ) : connected ? (
-                    <div className="mb-3 flex items-center justify-between rounded-full border border-emerald-200 bg-emerald-50 px-4 py-2">
+                    <div className="mb-3 flex items-center justify-between rounded-full border border-emerald-200 dark:border-[#0a3d22] bg-emerald-50 dark:bg-[#0a2e1a] px-4 py-2">
                       <div className="flex items-center gap-2">
-                        <span className="h-2 w-2 rounded-full bg-emerald-500" />
-                        <span className="font-mono text-[12px] font-medium text-emerald-700">
+                        <span className="h-2 w-2 rounded-full bg-emerald-500 dark:bg-[#4edea3]" />
+                        <span className="font-mono text-[12px] font-medium text-emerald-700 dark:text-[#4edea3]">
                           {shortAddr(address || "")}
                         </span>
                       </div>
-                      <span className="font-mono text-[12px] text-slate-500">
+                      <span className="font-mono text-[12px] text-slate-500 dark:text-[#86948a]">
                         {balance} XLM
                       </span>
                     </div>
                   ) : (
                     <button
                       onClick={connect}
-                      className="mb-3 flex w-full items-center justify-center gap-2 rounded-full border border-slate-200 bg-slate-50 py-2 text-[13px] font-medium text-slate-600 transition-all hover:bg-slate-100"
+                      className="mb-3 flex w-full items-center justify-center gap-2 rounded-full border border-slate-200 dark:border-[#3c4a42] bg-slate-50 dark:bg-[#131b2e] py-2 text-[13px] font-medium text-slate-600 dark:text-[#bbcabf] transition-all hover:bg-slate-100 dark:hover:bg-[#222a3d]"
                     >
                       <span className="material-symbols-outlined text-[16px]">
                         account_balance_wallet
@@ -943,7 +1000,7 @@ export default function ProjectDetailClient() {
                 </div>
 
                 {/* 3 micro-guarantees */}
-                <div className="border-t border-slate-100 px-6 py-4">
+                <div className="border-t border-slate-100 dark:border-[#3c4a42] px-6 py-4">
                   <div className="space-y-2">
                     {[
                       {
@@ -961,9 +1018,9 @@ export default function ProjectDetailClient() {
                     ].map((g, i) => (
                       <div
                         key={i}
-                        className="flex items-center gap-2 text-[11px] text-slate-500"
+                        className="flex items-center gap-2 text-[11px] text-slate-500 dark:text-[#86948a]"
                       >
-                        <span className="material-symbols-outlined text-[14px] text-emerald-600">
+                        <span className="material-symbols-outlined text-[14px] text-emerald-600 dark:text-[#4edea3]">
                           {g.icon}
                         </span>
                         {g.text}
@@ -974,23 +1031,73 @@ export default function ProjectDetailClient() {
               </div>
 
               {/* Asesor&iacute;a Institucional support box */}
-              <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+              <div className="rounded-2xl border border-slate-200 dark:border-[#3c4a42] bg-white dark:bg-[#222a3d] p-5 shadow-sm">
                 <div className="mb-2 flex items-center gap-2">
-                  <span className="material-symbols-outlined text-[20px] text-slate-600">
+                  <span className="material-symbols-outlined text-[20px] text-slate-600 dark:text-[#bbcabf]">
                     support_agent
                   </span>
-                  <span className="font-display text-[14px] font-bold text-slate-900">
+                  <span className="font-display text-[14px] font-bold text-slate-900 dark:text-[#dae2fd]">
                     Asesor&iacute;a Institucional
                   </span>
                 </div>
-                <p className="mb-3 text-[12px] leading-relaxed text-slate-500">
+                <p className="mb-3 text-[12px] leading-relaxed text-slate-500 dark:text-[#86948a]">
                   Inversores institucionales: contáctanos para allocations
                   dedicados, estructura legal personalizada y onboarding
                   corporativo.
                 </p>
-                <button className="w-full rounded-lg border border-slate-200 bg-white py-2 text-[12px] font-semibold text-slate-700 transition-all hover:bg-slate-50">
+                <button className="w-full rounded-lg border border-slate-200 dark:border-[#3c4a42] bg-white dark:bg-[#222a3d] py-2 text-[12px] font-semibold text-slate-700 dark:text-[#bbcabf] transition-all hover:bg-slate-50 dark:hover:bg-[#2a3548]">
                   Contactar Equipo
                 </button>
+              </div>
+
+              {/* Contract Actions card */}
+              <div className="rounded-2xl border border-slate-200 dark:border-[#3c4a42] bg-white dark:bg-[#222a3d] p-5 shadow-sm">
+                <div className="mb-3 flex items-center gap-2">
+                  <span className="material-symbols-outlined text-[20px] text-emerald-600 dark:text-[#4edea3]">
+                    contract
+                  </span>
+                  <span className="font-display text-[14px] font-bold text-slate-900 dark:text-[#dae2fd]">
+                    Acciones del Contrato
+                  </span>
+                </div>
+                <div className="space-y-2">
+                  <button
+                    onClick={handleDepositRevenue}
+                    disabled={depositLoading}
+                    className="w-full rounded-lg border border-emerald-200 dark:border-[#0a3d22] bg-emerald-50 dark:bg-[#0a2e1a] py-2.5 text-[12px] font-semibold text-emerald-700 dark:text-[#4edea3] transition-all hover:bg-emerald-100 dark:hover:bg-[#0a3d22] flex items-center justify-center gap-2 disabled:opacity-50"
+                  >
+                    {depositLoading ? (
+                      <span className="animate-spin h-4 w-4 border-2 border-emerald-500 border-t-transparent rounded-full" />
+                    ) : (
+                      <span className="material-symbols-outlined text-[16px]">upload</span>
+                    )}
+                    Depositar Ingresos
+                  </button>
+                  <button
+                    onClick={handleClaimRevenue}
+                    disabled={claimLoading}
+                    className="w-full rounded-lg border border-amber-200 dark:border-[#3d2e00] bg-amber-50 dark:bg-[#2a1f00] py-2.5 text-[12px] font-semibold text-amber-700 dark:text-[#f9bd22] transition-all hover:bg-amber-100 dark:hover:bg-[#3d2e00] flex items-center justify-center gap-2 disabled:opacity-50"
+                  >
+                    {claimLoading ? (
+                      <span className="animate-spin h-4 w-4 border-2 border-amber-500 border-t-transparent rounded-full" />
+                    ) : (
+                      <span className="material-symbols-outlined text-[16px]">redeem</span>
+                    )}
+                    Reclamar Rendimientos
+                  </button>
+                  <button
+                    onClick={handleWithdraw}
+                    disabled={withdrawLoading}
+                    className="w-full rounded-lg border border-slate-200 dark:border-[#3c4a42] bg-slate-50 dark:bg-[#131b2e] py-2.5 text-[12px] font-semibold text-slate-700 dark:text-[#bbcabf] transition-all hover:bg-slate-100 dark:hover:bg-[#222a3d] flex items-center justify-center gap-2 disabled:opacity-50"
+                  >
+                    {withdrawLoading ? (
+                      <span className="animate-spin h-4 w-4 border-2 border-slate-500 border-t-transparent rounded-full" />
+                    ) : (
+                      <span className="material-symbols-outlined text-[16px]">account_balance_wallet</span>
+                    )}
+                    Retirar Ventas
+                  </button>
+                </div>
               </div>
             </div>
           </div>
