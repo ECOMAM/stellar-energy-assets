@@ -38,7 +38,7 @@ const steps = [
 
 export default function HowItWorks() {
   return (
-    <section className="w-full max-w-7xl mx-auto px-5 lg:px-10 py-16">
+    <section id="how" className="w-full max-w-7xl mx-auto px-5 lg:px-10 py-16">
       {/* Header */}
       <div className="flex flex-col items-center text-center space-y-3 max-w-3xl mx-auto mb-12">
         <span className="font-mono text-[11px] uppercase tracking-widest text-emerald-700 bg-emerald-100/70 border border-emerald-200 px-5 py-2 rounded-full font-semibold">

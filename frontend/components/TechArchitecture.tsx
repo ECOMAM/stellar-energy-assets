@@ -23,7 +23,7 @@ const pillars = [
 
 export default function TechArchitecture() {
   return (
-    <section className="w-full bg-gradient-to-b from-emerald-50/50 to-slate-100/70 border-y border-slate-200 py-16 mt-12">
+    <section id="tech" className="w-full bg-gradient-to-b from-emerald-50/50 to-slate-100/70 border-y border-slate-200 py-16 mt-12">
       <div className="max-w-7xl mx-auto px-5 lg:px-10">
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-10 items-center">
           {/* Left: Conceptual + Pillars */}
