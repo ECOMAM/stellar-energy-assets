@@ -9,7 +9,7 @@ import TransactionSuccess from "@/components/TransactionSuccess";
 
 const PROJECT = {
   contractId:
-    "CDVT6PV536ALTEEXCAVWASGUOG5PHUJCA2WTVWYPZI5Z5KKTECCL6GY4",
+    "CB7V3676CQBO5OL6DEXI5FORLG37IR2GR7LXCZD7DUZTMSUT7BEEINR3",
   name: "Parque Solar Lima Norte",
   flag: "\uD83C\uDDF5\uD83C\uDDF7",
   slug: "lima-norte",
@@ -162,42 +162,7 @@ export default function ProjectDetailClient() {
 
       await new Promise((r) => setTimeout(r, 300));
 
-      // ── Auto-initialize contract if needed (first purchase only) ──
-      setSigningPhase("preparing");
-
-      // Step 1: Try initialize (panics with "already initialized" if called twice)
-      try {
-        await signAndSend(PROJECT.contractId, "initialize", []);
-      } catch (e: unknown) {
-        const em = e instanceof Error ? e.message : String(e);
-        // "already initialized" is expected — not an error
-        if (!em.includes("already initialized")) {
-          console.warn("initialize() failed:", em);
-        }
-      }
-
-      // Step 2: Try create_project (panics if project #1 already exists)
-      try {
-        await signAndSend(PROJECT.contractId, "create_project", [
-          address,
-          "Solar Lima Miraflores",
-          BigInt(100_000),
-          BigInt(10_000_000),
-          BigInt(1),
-        ]);
-      } catch (e: unknown) {
-        const em = e instanceof Error ? e.message : String(e);
-        // "already initialized" or "existing" expected — not an error
-        if (
-          !em.includes("already initialized") &&
-          !em.includes("existing") &&
-          !em.includes("duplicate")
-        ) {
-          console.warn("create_project() failed:", em);
-        }
-      }
-
-      // Step 3: Purchase tokens
+      // ── Purchase tokens ──
       setSigningPhase("signing");
       const { txHash: hash } = await signAndSend(
         PROJECT.contractId,
@@ -241,22 +206,12 @@ export default function ProjectDetailClient() {
       ) {
         setSigningPhase("insufficient_balance");
       }
-      // Detect contract not initialized (UnreachableCodeReached)
-      else if (
-        msg.includes("UnreachableCodeReached") ||
-        msg.includes("InvalidAction") ||
-        msg.includes("WasmVm")
-      ) {
-        setSigningError(
-          "Contract failed on-chain. The contract may not be deployed correctly on testnet."
-        );
-        setSigningPhase("error");
-      }
-      // Detect on-chain transaction failure
+      // Detect contract failure (on-chain panic)
       else if (msg.includes("Transaction failed on-chain")) {
         setSigningError(msg);
         setSigningPhase("error");
       }
+      // All other errors
       // All other errors
       else {
         setSigningError(msg);

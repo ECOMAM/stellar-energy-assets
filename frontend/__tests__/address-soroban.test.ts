@@ -8,7 +8,7 @@ import { Address, xdr, nativeToScVal } from "@stellar/stellar-sdk";
 describe("Stellar Address to ScVal conversion", () => {
   const TEST_ADDR = "GABGH363YQNYYAUN2M6YAPYFLPDMU5GZIJDWOEC2G3AUEH3TLPSXN3TX";
   const TEST_CONTRACT =
-    "CDVT6PV536ALTEEXCAVWASGUOG5PHUJCA2WTVWYPZI5Z5KKTECCL6GY4";
+    "CB7V3676CQBO5OL6DEXI5FORLG37IR2GR7LXCZD7DUZTMSUT7BEEINR3";
 
   it("Address.fromString().toScVal() produces valid XDR", () => {
     const addr = Address.fromString(TEST_ADDR);

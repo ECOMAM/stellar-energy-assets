@@ -80,7 +80,7 @@ describe("Flow edge cases", () => {
       if (!a) return "---";
       return a.slice(0, 6) + "..." + a.slice(-4);
     }
-    const id = "CDVT6PV536ALTEEXCAVWASGUOG5PHUJCA2WTVWYPZI5Z5KKTECCL6GY4";
+    const id = "CB7V3676CQBO5OL6DEXI5FORLG37IR2GR7LXCZD7DUZTMSUT7BEEINR3";
     expect(shortContract(id)).toBe("CDVT6P...6GY4");
   });
 });

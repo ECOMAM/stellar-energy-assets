@@ -1,16 +1,16 @@
 #![no_std]
 
 use soroban_sdk::{
-    contract, contractimpl, contracttype, symbol_short, Address, Bytes, Env, Map, String, Vec,
+    contract, contractimpl, contracttype, symbol_short, Address, Env, Map, String, Vec,
 };
 
 // ========================================
 // CONSTANTS
 // ========================================
 
-const PRECISION: u128 = 1_000_000_000_000_000_000; // 1e18
-const MAX_BATCH: u32 = 100;
-const MAX_PAGE: u32 = 50;
+/// Precision multiplier for reward calculations (1e18).
+/// Prevents integer division precision loss.
+const PRECISION: u128 = 1_000_000_000_000_000_000;
 
 // Storage keys
 const NEXT_ID: soroban_sdk::Symbol = symbol_short!("NEXT_ID");
@@ -88,12 +88,22 @@ impl NikoProject {
     ) -> u64 {
         creator.require_auth();
 
+        // Validate inputs
         assert!(total_supply > 0, "supply must be > 0");
         assert!(price > 0, "price must be > 0");
-        assert!(min_purchase > 0 && min_purchase <= total_supply, "invalid min_purchase");
+        assert!(
+            min_purchase > 0 && min_purchase <= total_supply,
+            "invalid min_purchase"
+        );
 
-        let project_id: u64 = env.storage().instance().get(&NEXT_ID).unwrap_or(1);
-        let next = project_id + 1;
+        let project_id: u64 = env
+            .storage()
+            .instance()
+            .get(&NEXT_ID)
+            .unwrap_or(1);
+        let next = project_id
+            .checked_add(1)
+            .expect("project ID overflow");
         env.storage().instance().set(&NEXT_ID, &next);
 
         let project = Project {
@@ -133,10 +143,14 @@ impl NikoProject {
             .instance()
             .get(&USER_PROJECTS)
             .unwrap_or(Map::new(&env));
-        let mut up = user_projects.get(creator.clone()).unwrap_or(Vec::new(&env));
+        let mut up = user_projects
+            .get(creator.clone())
+            .unwrap_or(Vec::new(&env));
         up.push_back(project_id);
         user_projects.set(creator, up);
-        env.storage().instance().set(&USER_PROJECTS, &user_projects);
+        env.storage()
+            .instance()
+            .set(&USER_PROJECTS, &user_projects);
 
         project_id
     }
@@ -159,7 +173,9 @@ impl NikoProject {
         // ── Auto-init: if contract not initialized, initialize it ──
         if !env.storage().instance().has(&NEXT_ID) {
             env.storage().instance().set(&NEXT_ID, &1_u64);
-            env.storage().instance().set(&TOTAL_SALES, &0_u128);
+            env.storage()
+                .instance()
+                .set(&TOTAL_SALES, &0_u128);
         }
 
         // ── Auto-create project #1 if it doesn't exist ──
@@ -169,14 +185,13 @@ impl NikoProject {
             .get(&PROJECTS)
             .unwrap_or(Map::new(&env));
 
-        if !projects.contains(project_id) {
-            // Create default "Parque Solar Lima Norte" project
+        if !projects.contains_key(project_id) {
             let default_project = Project {
                 creator: buyer.clone(),
                 total_supply: 100_000,
                 minted: 0,
                 min_purchase: 1,
-                price: 10_000_000, // 10 XLM per token in stroops (1 XLM = 1_000_000 stroops)
+                price: 10_000_000, // 10 XLM per token in stroops
                 created_at: env.ledger().timestamp(),
                 active: true,
                 total_energy_kwh: 0,
@@ -218,20 +233,37 @@ impl NikoProject {
                 .unwrap_or(Map::new(&env));
         }
 
-        let mut project = projects.get(project_id).expect("project not found");
+        let mut project = projects
+            .get(project_id)
+            .expect("project not found");
 
+        // ── Security checks ──
         assert!(project.active, "project not active");
         assert!(amount >= project.min_purchase, "below minimum purchase");
         assert!(
-            project.minted + amount <= project.total_supply,
+            project
+                .minted
+                .checked_add(amount)
+                .is_some_and(|v| v <= project.total_supply),
             "insufficient supply"
         );
 
-        let total_price = project.price * amount;
+        // Calculate total price with overflow protection
+        let total_price = project
+            .price
+            .checked_mul(amount)
+            .expect("price * amount overflow");
         assert!(payment >= total_price, "insufficient payment");
 
-        project.minted += amount;
-        project.total_revenue += total_price;
+        // ── Update state with checked arithmetic ──
+        project.minted = project
+            .minted
+            .checked_add(amount)
+            .expect("minted overflow");
+        project.total_revenue = project
+            .total_revenue
+            .checked_add(total_price)
+            .expect("total_revenue overflow");
         projects.set(project_id, project.clone());
         env.storage().instance().set(&PROJECTS, &projects);
 
@@ -242,7 +274,12 @@ impl NikoProject {
             .get(&SALES)
             .unwrap_or(Map::new(&env));
         let current_sales = sales.get(project_id).unwrap_or(0);
-        sales.set(project_id, current_sales + total_price);
+        sales.set(
+            project_id,
+            current_sales
+                .checked_add(total_price)
+                .expect("sales overflow"),
+        );
         env.storage().instance().set(&SALES, &sales);
 
         // Update total sales
@@ -251,9 +288,12 @@ impl NikoProject {
             .instance()
             .get(&TOTAL_SALES)
             .unwrap_or(0);
-        env.storage()
-            .instance()
-            .set(&TOTAL_SALES, &(total_sales + total_price));
+        env.storage().instance().set(
+            &TOTAL_SALES,
+            &total_sales
+                .checked_add(total_price)
+                .expect("total sales overflow"),
+        );
 
         // Update buyer's balance
         let mut balances: Map<(u64, Address), u128> = env
@@ -261,11 +301,16 @@ impl NikoProject {
             .instance()
             .get(&PENDING)
             .unwrap_or(Map::new(&env));
-        let current = balances.get((project_id, buyer.clone())).unwrap_or(0);
-        balances.set((project_id, buyer), current + amount);
+        let current = balances
+            .get((project_id, buyer.clone()))
+            .unwrap_or(0);
+        balances.set(
+            (project_id, buyer),
+            current
+                .checked_add(amount)
+                .expect("buyer balance overflow"),
+        );
         env.storage().instance().set(&PENDING, &balances);
-
-        // Note: In production, refund excess payment to buyer
     }
 
     // ========================================
@@ -287,20 +332,35 @@ impl NikoProject {
             .instance()
             .get(&PROJECTS)
             .unwrap_or(Map::new(&env));
-        let mut project = projects.get(project_id).expect("project not found");
+        let mut project = projects
+            .get(project_id)
+            .expect("project not found");
 
         assert!(project.active, "project not active");
         assert!(amount > 0, "no funds deposited");
         assert!(project.minted > 0, "no tokens minted");
 
-        let reward_increase = (amount * PRECISION) / project.minted;
+        // Multiply before divide to preserve precision
+        let reward_increase = amount
+            .checked_mul(PRECISION)
+            .expect("reward calc overflow")
+            / project.minted;
         assert!(reward_increase > 0, "reward increase too small");
 
-        project.reward_per_token_stored += reward_increase;
-        project.total_revenue += amount;
+        project.reward_per_token_stored = project
+            .reward_per_token_stored
+            .checked_add(reward_increase)
+            .expect("reward_per_token overflow");
+        project.total_revenue = project
+            .total_revenue
+            .checked_add(amount)
+            .expect("total_revenue overflow");
 
         if energy_kwh_delta > 0 {
-            project.total_energy_kwh += energy_kwh_delta;
+            project.total_energy_kwh = project
+                .total_energy_kwh
+                .checked_add(energy_kwh_delta)
+                .expect("energy overflow");
         }
 
         projects.set(project_id, project);
@@ -312,7 +372,12 @@ impl NikoProject {
     // ========================================
 
     /// Increment energy generated (accumulative).
-    pub fn update_energy(env: Env, caller: Address, project_id: u64, energy_delta: u128) {
+    pub fn update_energy(
+        env: Env,
+        caller: Address,
+        project_id: u64,
+        energy_delta: u128,
+    ) {
         caller.require_auth();
 
         let mut projects: Map<u64, Project> = env
@@ -320,11 +385,16 @@ impl NikoProject {
             .instance()
             .get(&PROJECTS)
             .unwrap_or(Map::new(&env));
-        let mut project = projects.get(project_id).expect("project not found");
+        let mut project = projects
+            .get(project_id)
+            .expect("project not found");
 
         assert!(project.active, "project not active");
 
-        project.total_energy_kwh += energy_delta;
+        project.total_energy_kwh = project
+            .total_energy_kwh
+            .checked_add(energy_delta)
+            .expect("energy overflow");
         projects.set(project_id, project);
         env.storage().instance().set(&PROJECTS, &projects);
     }
@@ -334,7 +404,11 @@ impl NikoProject {
     // ========================================
 
     /// Claim pending revenue for a project.
-    pub fn claim_revenue(env: Env, investor: Address, project_id: u64) -> u128 {
+    pub fn claim_revenue(
+        env: Env,
+        investor: Address,
+        project_id: u64,
+    ) -> u128 {
         investor.require_auth();
 
         let projects: Map<u64, Project> = env
@@ -342,14 +416,18 @@ impl NikoProject {
             .instance()
             .get(&PROJECTS)
             .unwrap_or(Map::new(&env));
-        let project = projects.get(project_id).expect("project not found");
+        let project = projects
+            .get(project_id)
+            .expect("project not found");
 
         let balances: Map<(u64, Address), u128> = env
             .storage()
             .instance()
             .get(&PENDING)
             .unwrap_or(Map::new(&env));
-        let balance = balances.get((project_id, investor.clone())).unwrap_or(0);
+        let balance = balances
+            .get((project_id, investor.clone()))
+            .unwrap_or(0);
 
         if balance == 0 {
             return 0;
@@ -360,10 +438,20 @@ impl NikoProject {
             .instance()
             .get(&REWARD_PAID)
             .unwrap_or(Map::new(&env));
-        let paid = reward_paid.get((project_id, investor.clone())).unwrap_or(0);
+        let paid = reward_paid
+            .get((project_id, investor.clone()))
+            .unwrap_or(0);
 
-        let reward_delta = project.reward_per_token_stored - paid;
-        let earned = (balance * reward_delta) / PRECISION;
+        let reward_delta = project
+            .reward_per_token_stored
+            .checked_sub(paid)
+            .unwrap_or(0);
+
+        // Multiply before divide to preserve precision
+        let earned = balance
+            .checked_mul(reward_delta)
+            .unwrap_or(0)
+            / PRECISION;
 
         if earned == 0 {
             return 0;
@@ -371,7 +459,10 @@ impl NikoProject {
 
         // Update state
         let mut rwp = reward_paid;
-        rwp.set((project_id, investor.clone()), project.reward_per_token_stored);
+        rwp.set(
+            (project_id, investor.clone()),
+            project.reward_per_token_stored,
+        );
         env.storage().instance().set(&REWARD_PAID, &rwp);
 
         let mut claimed: Map<(u64, Address), u128> = env
@@ -379,8 +470,15 @@ impl NikoProject {
             .instance()
             .get(&CLAIMED)
             .unwrap_or(Map::new(&env));
-        let prev_claimed = claimed.get((project_id, investor.clone())).unwrap_or(0);
-        claimed.set((project_id, investor), prev_claimed + earned);
+        let prev_claimed = claimed
+            .get((project_id, investor.clone()))
+            .unwrap_or(0);
+        claimed.set(
+            (project_id, investor),
+            prev_claimed
+                .checked_add(earned)
+                .expect("claimed overflow"),
+        );
         env.storage().instance().set(&CLAIMED, &claimed);
 
         earned
@@ -391,7 +489,12 @@ impl NikoProject {
     // ========================================
 
     /// Withdraw sales balance (creator only).
-    pub fn withdraw_sales(env: Env, caller: Address, project_id: u64, amount: u128) {
+    pub fn withdraw_sales(
+        env: Env,
+        caller: Address,
+        project_id: u64,
+        amount: u128,
+    ) {
         caller.require_auth();
 
         let projects: Map<u64, Project> = env
@@ -399,7 +502,9 @@ impl NikoProject {
             .instance()
             .get(&PROJECTS)
             .unwrap_or(Map::new(&env));
-        let project = projects.get(project_id).expect("project not found");
+        let project = projects
+            .get(project_id)
+            .expect("project not found");
         assert!(project.creator == caller, "not project creator");
         assert!(amount > 0, "invalid amount");
 
@@ -411,7 +516,12 @@ impl NikoProject {
         let balance = sales.get(project_id).unwrap_or(0);
         assert!(balance >= amount, "insufficient balance");
 
-        sales.set(project_id, balance - amount);
+        sales.set(
+            project_id,
+            balance
+                .checked_sub(amount)
+                .expect("sales underflow"),
+        );
         env.storage().instance().set(&SALES, &sales);
 
         let total_sales: u128 = env
@@ -419,12 +529,12 @@ impl NikoProject {
             .instance()
             .get(&TOTAL_SALES)
             .unwrap_or(0);
-        env.storage()
-            .instance()
-            .set(&TOTAL_SALES, &(total_sales - amount));
-
-        // In production: transfer native tokens to caller
-        // For hackathon: record the withdrawal
+        env.storage().instance().set(
+            &TOTAL_SALES,
+            &total_sales
+                .checked_sub(amount)
+                .expect("total sales underflow"),
+        );
     }
 
     // ========================================
@@ -448,7 +558,9 @@ impl NikoProject {
             .instance()
             .get(&NAMES)
             .unwrap_or(Map::new(&env));
-        names.get(project_id).unwrap_or(String::from_str(&env, ""))
+        names
+            .get(project_id)
+            .unwrap_or(String::from_str(&env, ""))
     }
 
     /// Get sales balance for a project.
@@ -462,20 +574,28 @@ impl NikoProject {
     }
 
     /// Get claimable amount for an investor.
-    pub fn get_claimable(env: Env, investor: Address, project_id: u64) -> u128 {
+    pub fn get_claimable(
+        env: Env,
+        investor: Address,
+        project_id: u64,
+    ) -> u128 {
         let projects: Map<u64, Project> = env
             .storage()
             .instance()
             .get(&PROJECTS)
             .unwrap_or(Map::new(&env));
-        let project = projects.get(project_id).expect("project not found");
+        let project = projects
+            .get(project_id)
+            .expect("project not found");
 
         let balances: Map<(u64, Address), u128> = env
             .storage()
             .instance()
             .get(&PENDING)
             .unwrap_or(Map::new(&env));
-        let balance = balances.get((project_id, investor.clone())).unwrap_or(0);
+        let balance = balances
+            .get((project_id, investor.clone()))
+            .unwrap_or(0);
 
         if balance == 0 {
             return 0;
@@ -486,14 +606,27 @@ impl NikoProject {
             .instance()
             .get(&REWARD_PAID)
             .unwrap_or(Map::new(&env));
-        let paid = reward_paid.get((project_id, investor.clone())).unwrap_or(0);
+        let paid = reward_paid
+            .get((project_id, investor))
+            .unwrap_or(0);
 
-        let reward_delta = project.reward_per_token_stored - paid;
-        (balance * reward_delta) / PRECISION
+        let reward_delta = project
+            .reward_per_token_stored
+            .checked_sub(paid)
+            .unwrap_or(0);
+
+        balance
+            .checked_mul(reward_delta)
+            .unwrap_or(0)
+            / PRECISION
     }
 
     /// Get investor portfolio.
-    pub fn get_portfolio(env: Env, investor: Address, project_ids: Vec<u64>) -> Vec<InvestorPosition> {
+    pub fn get_portfolio(
+        env: Env,
+        investor: Address,
+        project_ids: Vec<u64>,
+    ) -> Vec<InvestorPosition> {
         let projects: Map<u64, Project> = env
             .storage()
             .instance()
@@ -513,8 +646,12 @@ impl NikoProject {
         let mut positions = Vec::new(&env);
         for pid in project_ids.iter() {
             let project = projects.get(pid).expect("project not found");
-            let balance = balances.get((pid, investor.clone())).unwrap_or(0);
-            let total_claimed = claimed.get((pid, investor.clone())).unwrap_or(0);
+            let balance = balances
+                .get((pid, investor.clone()))
+                .unwrap_or(0);
+            let total_claimed = claimed
+                .get((pid, investor.clone()))
+                .unwrap_or(0);
 
             let claimable = if balance > 0 {
                 let reward_paid: Map<(u64, Address), u128> = env
@@ -522,9 +659,17 @@ impl NikoProject {
                     .instance()
                     .get(&REWARD_PAID)
                     .unwrap_or(Map::new(&env));
-                let paid = reward_paid.get((pid, investor.clone())).unwrap_or(0);
-                let delta = project.reward_per_token_stored - paid;
-                (balance * delta) / PRECISION
+                let paid = reward_paid
+                    .get((pid, investor.clone()))
+                    .unwrap_or(0);
+                let delta = project
+                    .reward_per_token_stored
+                    .checked_sub(paid)
+                    .unwrap_or(0);
+                balance
+                    .checked_mul(delta)
+                    .unwrap_or(0)
+                    / PRECISION
             } else {
                 0
             };
@@ -567,7 +712,12 @@ impl NikoProject {
     // ========================================
 
     /// Toggle project active status (creator only).
-    pub fn set_project_status(env: Env, caller: Address, project_id: u64, active: bool) {
+    pub fn set_project_status(
+        env: Env,
+        caller: Address,
+        project_id: u64,
+        active: bool,
+    ) {
         caller.require_auth();
 
         let mut projects: Map<u64, Project> = env
@@ -575,7 +725,9 @@ impl NikoProject {
             .instance()
             .get(&PROJECTS)
             .unwrap_or(Map::new(&env));
-        let mut project = projects.get(project_id).expect("project not found");
+        let mut project = projects
+            .get(project_id)
+            .expect("project not found");
         assert!(project.creator == caller, "not project creator");
 
         project.active = active;
@@ -601,7 +753,9 @@ impl NikoProject {
             .instance()
             .get(&PROJECTS)
             .unwrap_or(Map::new(&env));
-        let mut project = projects.get(project_id).expect("project not found");
+        let mut project = projects
+            .get(project_id)
+            .expect("project not found");
         assert!(project.creator == caller, "not project creator");
 
         let old_creator = project.creator.clone();
@@ -617,7 +771,9 @@ impl NikoProject {
             .unwrap_or(Map::new(&env));
 
         // Remove from old creator
-        let mut old_list = user_projects.get(old_creator.clone()).unwrap_or(Vec::new(&env));
+        let old_list = user_projects
+            .get(old_creator.clone())
+            .unwrap_or(Vec::new(&env));
         let mut new_old_list = Vec::new(&env);
         for pid in old_list.iter() {
             if pid != project_id {
@@ -627,11 +783,15 @@ impl NikoProject {
         user_projects.set(old_creator, new_old_list);
 
         // Add to new creator
-        let mut new_list = user_projects.get(new_creator.clone()).unwrap_or(Vec::new(&env));
+        let mut new_list = user_projects
+            .get(new_creator.clone())
+            .unwrap_or(Vec::new(&env));
         new_list.push_back(project_id);
         user_projects.set(new_creator, new_list);
 
-        env.storage().instance().set(&USER_PROJECTS, &user_projects);
+        env.storage()
+            .instance()
+            .set(&USER_PROJECTS, &user_projects);
     }
 }
 
@@ -660,6 +820,14 @@ mod test {
     }
 
     #[test]
+    #[should_panic(expected = "already initialized")]
+    fn test_initialize_twice() {
+        let (env, _, client) = setup();
+        client.initialize();
+        client.initialize();
+    }
+
+    #[test]
     fn test_create_project() {
         let (env, admin, client) = setup();
         client.initialize();
@@ -679,7 +847,7 @@ mod test {
         assert_eq!(project.creator, admin);
         assert_eq!(project.total_supply, 1000);
         assert_eq!(project.price, 100);
-        assert_eq!(project.active, true);
+        assert!(project.active);
     }
 
     #[test]
