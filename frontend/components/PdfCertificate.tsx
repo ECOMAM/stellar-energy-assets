@@ -2,6 +2,7 @@
 
 import { useCallback } from "react";
 import jsPDF from "jspdf";
+import QRCode from "qrcode";
 
 interface CertificateData {
   projectName: string;
@@ -12,163 +13,284 @@ interface CertificateData {
   walletAddress: string;
   txHash?: string;
   date?: string;
+  flag?: string;
 }
 
 /**
- * Generate a professional Solar Tokenization Certificate as PDF.
- * Uses jsPDF directly (no html2canvas needed).
+ * Generate a professional Solar Usufruct Certificate (CERTIFICADO DE USUFRUCTO SOLAR RWA)
+ * as a legal/financial PDF document. Uses jsPDF directly + qrcode library for real QR codes.
  */
 export default function PdfCertificate({ data }: { data: CertificateData }) {
-  const generate = useCallback(() => {
+  const generate = useCallback(async () => {
     const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
     const w = doc.internal.pageSize.getWidth();
     const h = doc.internal.pageSize.getHeight();
-    const dateStr = data.date || new Date().toLocaleDateString("es-PE", {
-      year: "numeric",
-      month: "long",
-      day: "numeric",
-    });
+    const dateStr =
+      data.date ||
+      new Date().toLocaleDateString("es-PE", {
+        year: "numeric",
+        month: "long",
+        day: "numeric",
+      });
+
+    const usufId = `SLN-USUF-${String(Math.floor(Math.random() * 9999)).padStart(4, "0")}`;
+    const truncatedAddr =
+      data.walletAddress.length > 16
+        ? `${data.walletAddress.slice(0, 8)}...${data.walletAddress.slice(-4)}`
+        : data.walletAddress;
+
+    // Colors
+    const emerald = [5, 150, 105] as const;
+    const orange = [234, 88, 12] as const;
+    const amber = [217, 119, 6] as const;
+    const slate900 = [15, 23, 42] as const;
+    const slate700 = [51, 65, 85] as const;
+    const slate500 = [100, 116, 139] as const;
+    const slate300 = [203, 213, 225] as const;
+    const slate200 = [226, 232, 240] as const;
+    const white = [255, 255, 255] as const;
+    const slate50 = [248, 250, 252] as const;
 
     // ── Background ──
-    doc.setFillColor(248, 250, 252);
+    doc.setFillColor(...slate50);
     doc.rect(0, 0, w, h, "F");
 
-    // ── Top emerald accent bar ──
-    doc.setFillColor(5, 150, 105); // #059669
-    doc.rect(0, 0, w, 8, "F");
+    // ── Top emerald accent bar (4mm) ──
+    doc.setFillColor(...emerald);
+    doc.rect(0, 0, w, 4, "F");
 
-    // ── Inner accent line ──
-    doc.setFillColor(217, 119, 6); // #d97706 (amber)
-    doc.rect(0, 8, w, 1.5, "F");
+    // ── Amber thin line (1mm) ──
+    doc.setFillColor(...amber);
+    doc.rect(0, 4, w, 1, "F");
 
-    // ── NIKO SUN Logo area ──
-    doc.setFillColor(5, 150, 105);
-    doc.roundedRect(25, 20, 160, 30, 4, 4, "F");
+    // ── Header section ──
+    let y = 14;
 
-    doc.setTextColor(255, 255, 255);
+    // Left: NIKOSUN + badge + powered by
     doc.setFont("helvetica", "bold");
-    doc.setFontSize(22);
-    doc.text("NIKOSUN", w / 2 - 42, 33, { align: "left" });
+    doc.setFontSize(16);
+    doc.setTextColor(...slate900);
+    doc.text("NIKOSUN", 20, y);
 
-    doc.setFontSize(10);
-    doc.setFont("helvetica", "normal");
-    doc.text("RWA SOLAR", w / 2 + 10, 33, { align: "left" });
-
+    // RWA SOLAR badge
+    doc.setFillColor(...emerald);
+    doc.roundedRect(57, y - 5, 22, 6, 1, 1, "F");
     doc.setFontSize(7);
-    doc.text("Powered by Stellar Soroban", w / 2, 43, { align: "center" });
+    doc.setTextColor(...white);
+    doc.text("RWA SOLAR", 68, y - 1.2, { align: "center" });
 
-    // ── Title ──
-    doc.setTextColor(15, 23, 42);
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(20);
-    doc.text("Certificado de Tokenización Solar", w / 2, 68, { align: "center" });
-
-    // ── Subtitle line ──
-    doc.setDrawColor(5, 150, 105);
-    doc.setLineWidth(0.8);
-    doc.line(w / 2 - 45, 72, w / 2 + 45, 72);
-
-    // ── Certificate body ──
-    doc.setFontSize(10);
+    // Powered by Stellar Soroban
+    doc.setFontSize(7);
     doc.setFont("helvetica", "normal");
-    doc.setTextColor(71, 85, 105); // slate-500
-    doc.text("Este certificado acredita la tenencia de tokens solares RWA en la", w / 2, 82, { align: "center" });
-    doc.text("red Stellar Soroban, respaldado por infraestructura solar real.", w / 2, 88, { align: "center" });
+    doc.setTextColor(...slate500);
+    doc.text("Powered by Stellar Soroban", 20, y + 5);
 
-    // ── Info cards ──
-    const cardY = 98;
-    const cardH = 52;
+    // Right: workspace_premium Título Digital Desmaterializado
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(7);
+    doc.setTextColor(...orange);
+    doc.text("Título Digital Desmaterializado", w - 20, y - 2, { align: "right" });
 
-    // Left card - Project Info
-    doc.setFillColor(255, 255, 255);
-    doc.setDrawColor(226, 232, 240);
-    doc.roundedRect(20, cardY, 80, cardH, 3, 3, "FD");
+    // Right: material icon substitute (star icon text)
+    doc.setFontSize(6);
+    doc.setTextColor(...slate500);
+    doc.text("workspace_premium", w - 20, y + 3, { align: "right" });
+
+    y += 14;
+
+    // ── Main title ──
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(17);
+    doc.setTextColor(...slate900);
+    doc.text("CERTIFICADO DE USUFRUCTO SOLAR RWA", w / 2, y, { align: "center" });
+
+    y += 6;
+
+    // ── Subtitle: legal reference ──
+    doc.setFont("helvetica", "italic");
+    doc.setFontSize(8);
+    doc.setTextColor(...slate500);
+    doc.text("Ley General de Sociedades N° 26887 & D.L. 1023", w / 2, y, {
+      align: "center",
+    });
+
+    y += 5;
+
+    // ── NFT ID right-aligned ──
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(9);
+    doc.setTextColor(...amber);
+    doc.text(`NFT #${usufId}`, w - 20, y, { align: "right" });
+
+    y += 3;
+
+    // ── Separator line ──
+    doc.setDrawColor(...emerald);
+    doc.setLineWidth(0.6);
+    doc.line(20, y, w - 20, y);
+
+    y += 8;
+
+    // ── Two-column grid ──
+    const colLeftX = 20;
+    const colRightX = w / 2 + 5;
+    const colWidth = w / 2 - 25;
+
+    // ── LEFT COLUMN: Activo Subyacente ──
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(8);
+    doc.setTextColor(...slate500);
+    doc.text("ACTIVO SUBYACENTE", colLeftX, y);
+
+    y += 5;
+
+    // Flag + project name
+    const flagPrefix = data.flag ? `${data.flag} ` : "";
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(12);
+    doc.setTextColor(...slate900);
+    doc.text(`${flagPrefix}${data.projectName}`, colLeftX, y);
+
+    y += 5;
+
+    // Location
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(9);
+    doc.setTextColor(...slate500);
+    doc.text(`📍 ${data.location}`, colLeftX, y);
+
+    y += 6;
+
+    // ACTIVO REAL badge
+    doc.setFillColor(...emerald);
+    doc.roundedRect(colLeftX, y - 3.5, 24, 5, 1, 1, "F");
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(7);
+    doc.setTextColor(...white);
+    doc.text("ACTIVO REAL", colLeftX + 12, y - 0.2, { align: "center" });
+
+    // ── RIGHT COLUMN: Legal metadata ──
+    let rightY = y - 12;
+
+    const rightFields = [
+      { label: "Fideicomitente / Emisor", value: "La Fiduciaria S.A. / NIKO Protocol" },
+      { label: "Inscripción Registral", value: "SUNARP N° 14829104" },
+      { label: "Potencia Adjudicada", value: data.capacity || "—" },
+      { label: "Vigencia del Usufructo", value: "10 Años (PPA Indexado USD)" },
+      { label: "Titular Registrado", value: truncatedAddr },
+      { label: "Estándar Soroban", value: "SEP-41 Non-Fungible RWA" },
+    ];
+
+    for (const field of rightFields) {
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(6.5);
+      doc.setTextColor(...slate500);
+      doc.text(field.label.toUpperCase(), colRightX, rightY);
+
+      rightY += 3.5;
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(9);
+      doc.setTextColor(...slate900);
+      doc.text(field.value, colRightX, rightY);
+
+      rightY += 5;
+    }
+
+    y += 12;
+
+    // ── PATRIMONIO AUTÓNOMO section ──
+    const paY = Math.max(y, rightY + 2);
+
+    doc.setFillColor(241, 245, 249); // slate-100
+    doc.roundedRect(20, paY, w - 40, 16, 2, 2, "F");
+
+    // Policy icon circle
+    doc.setFillColor(...amber);
+    doc.circle(30, paY + 8, 4, "F");
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(7);
+    doc.setTextColor(...white);
+    doc.text("P", 30, paY + 9.5, { align: "center" });
 
     doc.setFont("helvetica", "bold");
     doc.setFontSize(9);
-    doc.setTextColor(5, 150, 105);
-    doc.text("PROYECTO", 28, cardY + 10);
+    doc.setTextColor(...amber);
+    doc.text("PATRIMONIO AUTÓNOMO", 38, paY + 7);
 
-    doc.setFontSize(11);
-    doc.setTextColor(15, 23, 42);
-    doc.text(data.projectName, 28, cardY + 18);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(7);
+    doc.setTextColor(...slate500);
+    doc.text("Inembargable y auditado trimestralmente", 38, paY + 12);
 
-    doc.setFontSize(8);
-    doc.setTextColor(100, 116, 139);
-    doc.text(`Ubicación: ${data.location}`, 28, cardY + 27);
-    doc.text(`Capacidad: ${data.capacity}`, 28, cardY + 34);
-    doc.text(`Fecha: ${dateStr}`, 28, cardY + 41);
+    y = paY + 22;
 
-    // Right card - Token Info
-    doc.setFillColor(255, 255, 255);
-    doc.roundedRect(110, cardY, 80, cardH, 3, 3, "FD");
-    doc.setDrawColor(226, 232, 240);
-    doc.roundedRect(110, cardY, 80, cardH, 3, 3, "FD");
+    // ── QR Code section ──
+    const qrCenterX = w / 2;
+    const qrSize = 30;
 
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(9);
-    doc.setTextColor(234, 88, 12); // orange
-    doc.text("TOKENIZACIÓN", 118, cardY + 10);
-
-    doc.setFontSize(11);
-    doc.setTextColor(15, 23, 42);
-    doc.text(`${data.tokenAmount} Tokens`, 118, cardY + 18);
-
-    doc.setFontSize(8);
-    doc.setTextColor(100, 116, 139);
-    doc.text(`Precio: ${data.pricePaid}`, 118, cardY + 27);
-    doc.text(`Red: Stellar Testnet`, 118, cardY + 34);
-
-    // Wallet truncated
-    const truncatedAddr = data.walletAddress.length > 20
-      ? `${data.walletAddress.slice(0, 8)}...${data.walletAddress.slice(-6)}`
-      : data.walletAddress;
-    doc.text(`Wallet: ${truncatedAddr}`, 118, cardY + 41);
-
-    // ── QR Code area ──
-    const qrY = cardY + cardH + 12;
     if (data.txHash) {
-      // Simple QR box with tx hash reference
-      doc.setFillColor(241, 245, 249); // slate-100
-      doc.roundedRect(w / 2 - 25, qrY, 50, 50, 3, 3, "F");
+      const qrUrl = `https://stellar.expert/testnet/tx/${data.txHash}`;
 
-      // Draw a simple QR placeholder pattern
-      doc.setFillColor(15, 23, 42);
-      const qrX = w / 2 - 18;
-      const qrStartY = qrY + 5;
-      const cellSize = 2.5;
-      // Simple deterministic pattern based on tx hash
-      const hash = data.txHash;
-      for (let row = 0; row < 14; row++) {
-        for (let col = 0; col < 14; col++) {
-          const idx = (row * 14 + col) % hash.length;
-          const charCode = hash.charCodeAt(idx);
-          if (charCode % 3 !== 0 || (row < 3 && col < 3) || (row < 3 && col > 10) || (row > 10 && col < 3)) {
-            doc.rect(qrX + col * cellSize, qrStartY + row * cellSize, cellSize, cellSize, "F");
-          }
-        }
+      try {
+        // Generate REAL QR code as data URL
+        const qrDataUrl = await QRCode.toDataURL(qrUrl, {
+          width: 300,
+          margin: 1,
+          color: {
+            dark: "#0f172a",
+            light: "#ffffff",
+          },
+        });
+
+        // Add QR image centered
+        doc.addImage(qrDataUrl, "PNG", qrCenterX - qrSize / 2, y, qrSize, qrSize);
+
+        // "Validar On-Chain" text below QR
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(8);
+        doc.setTextColor(...slate700);
+        doc.text("Validar On-Chain", qrCenterX, y + qrSize + 5, { align: "center" });
+
+        // Tx hash in small monospace below
+        doc.setFont("courier", "normal");
+        doc.setFontSize(6);
+        doc.setTextColor(...slate500);
+        doc.text(data.txHash, qrCenterX, y + qrSize + 9, { align: "center" });
+      } catch {
+        // Fallback: placeholder if QR generation fails
+        doc.setFillColor(241, 245, 249);
+        doc.roundedRect(qrCenterX - qrSize / 2, y, qrSize, qrSize, 2, 2, "F");
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(7);
+        doc.setTextColor(...slate500);
+        doc.text("QR Code", qrCenterX, y + qrSize / 2, { align: "center" });
       }
-
-      doc.setFontSize(6);
-      doc.setTextColor(100, 116, 139);
-      doc.text("Verificar en Stellar Expert", w / 2, qrY + 46, { align: "center" });
     }
 
     // ── Footer ──
-    doc.setFillColor(5, 150, 105);
-    doc.rect(0, h - 20, w, 20, "F");
+    const footerY = h - 16;
 
-    doc.setFillColor(217, 119, 6);
-    doc.rect(0, h - 20, w, 1, "F");
+    // Emerald bar
+    doc.setFillColor(...emerald);
+    doc.rect(0, footerY, w, 16, "F");
 
-    doc.setTextColor(255, 255, 255);
+    // Amber line at top of footer
+    doc.setFillColor(...amber);
+    doc.rect(0, footerY, w, 1, "F");
+
+    doc.setTextColor(...white);
     doc.setFont("helvetica", "bold");
     doc.setFontSize(9);
-    doc.text("Built on Stellar Soroban", w / 2, h - 12, { align: "center" });
+    doc.text("Built on Stellar Soroban", w / 2, footerY + 8, { align: "center" });
 
-    doc.setFontSize(7);
+    doc.setFontSize(6.5);
     doc.setFont("helvetica", "normal");
-    doc.text("NIKOSUN RWA Solar — Certificado generado automáticamente", w / 2, h - 7, { align: "center" });
+    doc.text(
+      "NIKOSUN RWA Solar — Certificado generado automáticamente",
+      w / 2,
+      footerY + 12.5,
+      { align: "center" }
+    );
 
     // ── Save ──
     const fileName = `NikoSun_Certificado_${data.projectName.replace(/\s+/g, "_")}_${Date.now()}.pdf`;
@@ -177,7 +299,7 @@ export default function PdfCertificate({ data }: { data: CertificateData }) {
 
   return (
     <button
-      onClick={generate}
+      onClick={() => generate()}
       className="inline-flex items-center gap-2 bg-emerald-600 text-white hover:bg-emerald-700 px-4 py-2 rounded-lg text-sm font-semibold transition-colors"
     >
       <span className="material-symbols-outlined text-[18px]">download</span>

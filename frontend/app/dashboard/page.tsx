@@ -955,7 +955,7 @@ export default function Page() {
 
   return (
     <main className="min-h-screen bg-surface text-slate-100">
-      <div className="flex min-h-screen">
+      <div className="flex min-h-screen relative">
         <Sidebar
           view={view}
           setView={setView}
@@ -964,7 +964,10 @@ export default function Page() {
           connected={connected}
           connect={connect}
         />
-        <div className="min-w-0 flex-1">
+        <div className="min-w-0 flex-1 relative">
+          {/* Ambient glow effects - matching landing page */}
+          <div className="absolute -top-32 left-1/2 -translate-x-1/2 w-[900px] h-[500px] bg-gradient-to-b from-amber-200/20 via-emerald-100/30 to-transparent blur-[120px] pointer-events-none -z-10" />
+          <div className="absolute top-48 right-10 w-96 h-96 bg-emerald-200/20 blur-[140px] pointer-events-none -z-10" />
           {/* Top Header */}
           <header className="flex h-[76px] items-center justify-between border-b border-slate-200 bg-white/90 backdrop-blur-xl px-6 lg:px-10">
             <div className="flex items-center gap-3">

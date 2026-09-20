@@ -434,6 +434,7 @@ export default function TransactionSuccess({
                   pricePaid: `${costXlm} XLM`,
                   walletAddress,
                   txHash,
+                  flag: projectFlag,
                 }}
               />
               <button
