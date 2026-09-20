@@ -67,6 +67,12 @@ export default function Header() {
               Seguridad & RWA
             </a>
             <a
+              href="/dashboard"
+              className="text-stone-600 hover:text-emerald-800 hover:bg-emerald-50 rounded-full px-4 py-1.5 text-xs font-medium transition-all"
+            >
+              Dashboard
+            </a>
+            <a
               href="#"
               className="text-stone-600 hover:text-emerald-800 hover:bg-emerald-50 rounded-full px-4 py-1.5 text-xs font-medium transition-all flex items-center gap-1"
             >
