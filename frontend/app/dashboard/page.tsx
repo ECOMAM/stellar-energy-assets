@@ -65,19 +65,27 @@ const nav = [
 
 function Logo() {
   return (
-    <div className="flex items-center gap-2.5">
-      <div className="grid size-9 place-items-center rounded-xl bg-emerald-600 text-white shadow-md">
-        <span className="material-symbols-outlined text-[20px]">wb_sunny</span>
+    <a href="/" className="flex items-center gap-3.5 group">
+      <div className="relative flex items-center justify-center w-11 h-11 rounded-xl bg-gradient-to-br from-emerald-50 to-amber-50 border border-emerald-200 shadow-sm group-hover:border-emerald-500 transition-all p-1">
+        <span className="material-symbols-outlined text-emerald-600 text-[22px]">
+          solar_power
+        </span>
       </div>
-      <div>
-        <div className="font-mono text-sm font-bold tracking-[.2em] text-slate-900">
-          NIKO
+      <div className="flex flex-col">
+        <div className="flex items-center gap-1.5">
+          <span className="text-xl tracking-tight font-extrabold text-slate-900 font-display">
+            NIKO
+            <span className="text-amber-600">SUN</span>
+          </span>
+          <span className="px-1.5 py-0.5 rounded text-[10px] font-mono bg-emerald-100 text-emerald-800 font-bold border border-emerald-300">
+            RWA SOLAR
+          </span>
         </div>
-        <div className="font-mono text-[10px] tracking-[.34em] text-emerald-600">
-          SUN
-        </div>
+        <span className="font-mono text-[11px] text-emerald-700 font-semibold tracking-wide">
+          Powered by Stellar Soroban
+        </span>
       </div>
-    </div>
+    </a>
   );
 }
 
@@ -176,9 +184,9 @@ function Sidebar({
         <Logo />
       </div>
       <div className="mb-10 hidden max-lg:block">
-        <div className="grid size-9 place-items-center rounded-xl bg-emerald-600 text-white">
-          <span className="material-symbols-outlined text-[20px]">wb_sunny</span>
-        </div>
+        <a href="/" className="grid size-9 place-items-center rounded-xl bg-gradient-to-br from-emerald-50 to-amber-50 border border-emerald-200">
+          <span className="material-symbols-outlined text-emerald-600 text-[22px]">solar_power</span>
+        </a>
       </div>
       <nav className="flex w-full flex-col gap-1 max-md:flex-row max-md:justify-around">
         {nav.map(({ id, label, icon }) => (
