@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 import { WalletProvider } from "@/lib/WalletContext";
-import { ThemeProvider } from "@/lib/ThemeContext";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -16,7 +15,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="es" className="dark" suppressHydrationWarning>
+    <html lang="es" className="light">
       <head>
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link
@@ -34,9 +33,7 @@ export default function RootLayout({
         />
       </head>
       <body className="min-h-screen bg-surface font-body text-on-surface antialiased selection:bg-primary-fixed-dim selection:text-on-primary-fixed">
-        <ThemeProvider>
-          <WalletProvider>{children}</WalletProvider>
-        </ThemeProvider>
+        <WalletProvider>{children}</WalletProvider>
       </body>
     </html>
   );

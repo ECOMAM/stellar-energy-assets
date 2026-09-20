@@ -43,10 +43,10 @@ export default function StatsBar() {
         {metrics.map((m, i) => (
           <div
             key={i}
-            className="flex flex-col p-5 rounded-xl bg-white dark:bg-[#222a3d] border border-emerald-100 dark:border-[#0a3d22] shadow-md transition-all duration-300 hover:shadow-lg hover:border-emerald-200 dark:hover:border-[#4edea3]"
+            className="flex flex-col p-5 rounded-xl bg-white border border-emerald-100 shadow-md transition-all duration-300 hover:shadow-lg hover:border-emerald-200"
           >
-            <div className="flex items-center justify-between text-slate-500 dark:text-[#86948a]">
-              <span className="text-[13px] tracking-wide uppercase font-semibold text-slate-500 dark:text-[#86948a]">
+            <div className="flex items-center justify-between text-slate-500">
+              <span className="text-[13px] tracking-wide uppercase font-semibold text-slate-500">
                 {m.label}
               </span>
               <span
@@ -55,10 +55,10 @@ export default function StatsBar() {
                 {m.icon}
               </span>
             </div>
-            <span className="font-mono text-[20px] leading-[28px] lg:text-[40px] lg:leading-[48px] text-slate-900 dark:text-[#dae2fd] mt-3 font-bold tracking-tight">
+            <span className="font-mono text-[20px] leading-[28px] lg:text-[40px] lg:leading-[48px] text-slate-900 mt-3 font-bold tracking-tight">
               {m.value}
               {m.unit && (
-                <span className="text-[20px] font-normal text-slate-500 dark:text-[#86948a]">
+                <span className="text-[20px] font-normal text-slate-500">
                   {" "}
                   {m.unit}
                 </span>

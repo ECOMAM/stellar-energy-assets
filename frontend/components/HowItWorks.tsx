@@ -38,16 +38,16 @@ const steps = [
 
 export default function HowItWorks() {
   return (
-    <section id="how" className="w-full max-w-7xl mx-auto px-5 lg:px-10 py-16">
+    <section className="w-full max-w-7xl mx-auto px-5 lg:px-10 py-16">
       {/* Header */}
       <div className="flex flex-col items-center text-center space-y-3 max-w-3xl mx-auto mb-12">
-        <span className="font-mono text-[11px] uppercase tracking-widest text-emerald-700 dark:text-[#4edea3] bg-emerald-100/70 dark:bg-[#0a2e1a] border border-emerald-200 dark:border-[#0a3d22] px-5 py-2 rounded-full font-semibold">
+        <span className="font-mono text-[11px] uppercase tracking-widest text-emerald-700 bg-emerald-100/70 border border-emerald-200 px-5 py-2 rounded-full font-semibold">
           Infraestructura Simple y Descentralizada
         </span>
-        <h2 className="font-display text-[24px] leading-[32px] lg:text-[40px] lg:leading-[48px] text-slate-900 dark:text-[#dae2fd] font-bold">
+        <h2 className="font-display text-[24px] leading-[32px] lg:text-[40px] lg:leading-[48px] text-slate-900 font-bold">
           ¿Cómo Funciona el Protocolo NIKO SUN?
         </h2>
-        <p className="text-[14px] text-slate-600 dark:text-[#bbcabf] leading-relaxed">
+        <p className="text-[14px] text-slate-600 leading-relaxed">
           Eliminamos los intermediarios de capital de riesgo tradicionales.
           Conecta directamente tu liquidez con la generación de energía renovable
           en Latinoamérica a través de contratos Soroban.
@@ -59,16 +59,16 @@ export default function HowItWorks() {
         {steps.map((step, i) => (
           <div
             key={i}
-            className="relative p-8 rounded-xl bg-white dark:bg-[#222a3d] border border-slate-200 dark:border-[#3c4a42] flex flex-col justify-between overflow-hidden shadow-md group hover:border-emerald-300 dark:hover:border-[#4edea3] hover:shadow-lg transition-all duration-300"
+            className="relative p-8 rounded-xl bg-white border border-slate-200 flex flex-col justify-between overflow-hidden shadow-md group hover:border-emerald-300 hover:shadow-lg transition-all duration-300"
           >
             {/* Glow */}
             <div
-              className={`absolute -right-6 -top-6 w-24 h-24 ${step.glow} dark:opacity-40 rounded-full blur-2xl group-hover:opacity-80 transition-all`}
+              className={`absolute -right-6 -top-6 w-24 h-24 ${step.glow} rounded-full blur-2xl group-hover:opacity-80 transition-all`}
             />
 
             <div>
               <div className="flex items-center justify-between mb-5">
-                <span className="font-display text-[32px] font-bold text-slate-200 dark:text-[#3c4a42] select-none">
+                <span className="font-display text-[32px] font-bold text-slate-200 select-none">
                   {step.num}
                 </span>
                 <div
@@ -79,10 +79,10 @@ export default function HowItWorks() {
                   </span>
                 </div>
               </div>
-              <h3 className="font-display text-[20px] text-slate-900 dark:text-[#dae2fd] mb-2 font-bold">
+              <h3 className="font-display text-[20px] text-slate-900 mb-2 font-bold">
                 {step.title}
               </h3>
-              <p className="text-[14px] text-slate-600 dark:text-[#bbcabf] leading-relaxed">
+              <p className="text-[14px] text-slate-600 leading-relaxed">
                 {step.description}
               </p>
             </div>

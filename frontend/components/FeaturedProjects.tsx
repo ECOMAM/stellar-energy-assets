@@ -67,11 +67,11 @@ export default function FeaturedProjects() {
       {/* Header */}
       <div className="flex flex-col md:flex-row items-start md:items-end justify-between mb-12 gap-5">
         <div>
-          <div className="flex items-center gap-2 text-emerald-700 dark:text-[#4edea3] font-mono text-[11px] mb-2 uppercase tracking-wider font-semibold">
-            <span className="w-2 h-2 rounded-full bg-emerald-600 dark:bg-[#4edea3]" />
+          <div className="flex items-center gap-2 text-emerald-700 font-mono text-[11px] mb-2 uppercase tracking-wider font-semibold">
+            <span className="w-2 h-2 rounded-full bg-emerald-600" />
             <span>Emisión Activa de Tokens</span>
           </div>
-          <h2 className="font-display text-[24px] leading-[32px] lg:text-[40px] lg:leading-[48px] text-slate-900 dark:text-[#dae2fd] font-bold">
+          <h2 className="font-display text-[24px] leading-[32px] lg:text-[40px] lg:leading-[48px] text-slate-900 font-bold">
             Proyectos Solares Destacados
           </h2>
         </div>
@@ -79,10 +79,10 @@ export default function FeaturedProjects() {
           <button className="px-5 py-2 rounded-lg bg-emerald-600 text-white text-[13px] font-semibold shadow-sm hover:bg-emerald-700 transition-colors">
             Todos (12)
           </button>
-          <button className="px-5 py-2 rounded-lg bg-white dark:bg-[#222a3d] border border-slate-200 dark:border-[#3c4a42] text-slate-600 dark:text-[#bbcabf] text-[13px] hover:text-slate-900 dark:hover:text-[#dae2fd] hover:border-slate-300 dark:hover:border-[#4edea3] font-medium transition-colors">
+          <button className="px-5 py-2 rounded-lg bg-white border border-slate-200 text-slate-600 text-[13px] hover:text-slate-900 hover:border-slate-300 font-medium transition-colors">
             Perú (8)
           </button>
-          <button className="px-5 py-2 rounded-lg bg-white dark:bg-[#222a3d] border border-slate-200 dark:border-[#3c4a42] text-slate-600 dark:text-[#bbcabf] text-[13px] hover:text-slate-900 dark:hover:text-[#dae2fd] hover:border-slate-300 dark:hover:border-[#4edea3] font-medium transition-colors">
+          <button className="px-5 py-2 rounded-lg bg-white border border-slate-200 text-slate-600 text-[13px] hover:text-slate-900 hover:border-slate-300 font-medium transition-colors">
             Chile (4)
           </button>
         </div>
@@ -93,7 +93,7 @@ export default function FeaturedProjects() {
         {projects.map((p) => (
           <div
             key={p.id}
-            className="flex flex-col rounded-xl bg-white dark:bg-[#222a3d] border border-slate-200 dark:border-[#3c4a42] overflow-hidden shadow-md hover:shadow-xl transition-all duration-300 hover:translate-y-[-4px]"
+            className="flex flex-col rounded-xl bg-white border border-slate-200 overflow-hidden shadow-md hover:shadow-xl transition-all duration-300 hover:translate-y-[-4px]"
           >
             {/* Image */}
             <div className="relative h-48 w-full overflow-hidden">
@@ -105,15 +105,15 @@ export default function FeaturedProjects() {
               <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent" />
 
               {/* APY pill */}
-              <div className="absolute top-4 right-4 px-4 py-1 rounded-full bg-white/95 dark:bg-[#222a3d]/95 border border-emerald-200 dark:border-[#0a3d22] shadow-md flex items-center gap-2">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-600 dark:bg-[#4edea3] animate-ping" />
-                <span className="font-mono text-[12px] font-bold text-emerald-700 dark:text-[#4edea3]">
+              <div className="absolute top-4 right-4 px-4 py-1 rounded-full bg-white/95 border border-emerald-200 shadow-md flex items-center gap-2">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-600 animate-ping" />
+                <span className="font-mono text-[12px] font-bold text-emerald-700">
                   {p.apy} APY
                 </span>
               </div>
 
               {/* Asset pill */}
-              <div className="absolute bottom-3 left-4 px-3 py-0.5 rounded bg-white/90 dark:bg-[#222a3d]/90 backdrop-blur-sm font-mono text-[11px] text-slate-700 dark:text-[#bbcabf] font-semibold border border-white/40 dark:border-[#3c4a42]/40">
+              <div className="absolute bottom-3 left-4 px-3 py-0.5 rounded bg-white/90 backdrop-blur-sm font-mono text-[11px] text-slate-700 font-semibold border border-white/40">
                 ASSET: {p.asset}
               </div>
             </div>
@@ -122,31 +122,31 @@ export default function FeaturedProjects() {
             <div className="p-6 flex-1 flex flex-col justify-between space-y-4">
               <div>
                 <div className="flex items-center justify-between">
-                  <h3 className="text-[20px] font-display text-slate-900 dark:text-[#dae2fd] flex items-center gap-2 font-bold">
+                  <h3 className="text-[20px] font-display text-slate-900 flex items-center gap-2 font-bold">
                     <span>{p.name}</span>
                     <span className="text-[16px]">{p.flag}</span>
                   </h3>
                 </div>
-                <p className="text-[13px] text-slate-600 dark:text-[#bbcabf] mt-1 leading-relaxed">
+                <p className="text-[13px] text-slate-600 mt-1 leading-relaxed">
                   {p.description}
                 </p>
               </div>
 
               {/* Specs grid */}
-              <div className="grid grid-cols-2 gap-3 py-3 rounded-lg bg-slate-50 dark:bg-[#131b2e] border border-slate-100 dark:border-[#3c4a42] px-4">
+              <div className="grid grid-cols-2 gap-3 py-3 rounded-lg bg-slate-50 border border-slate-100 px-4">
                 <div>
-                  <span className="font-mono text-[11px] text-slate-500 dark:text-[#86948a] block font-medium">
+                  <span className="font-mono text-[11px] text-slate-500 block font-medium">
                     CAPACIDAD
                   </span>
-                  <span className="font-mono text-[14px] text-slate-900 dark:text-[#dae2fd] font-bold">
+                  <span className="font-mono text-[14px] text-slate-900 font-bold">
                     {p.capacity}
                   </span>
                 </div>
                 <div>
-                  <span className="font-mono text-[11px] text-slate-500 dark:text-[#86948a] block font-medium">
+                  <span className="font-mono text-[11px] text-slate-500 block font-medium">
                     PRECIO / TOKEN
                   </span>
-                  <span className="font-mono text-[14px] text-orange-600 dark:text-[#ffb690] font-bold">
+                  <span className="font-mono text-[14px] text-orange-600 font-bold">
                     {p.price}
                   </span>
                 </div>
@@ -155,14 +155,14 @@ export default function FeaturedProjects() {
               {/* Funding progress */}
               <div className="space-y-2">
                 <div className="flex justify-between items-center font-mono text-[12px]">
-                  <span className="text-slate-600 dark:text-[#bbcabf] font-medium">
+                  <span className="text-slate-600 font-medium">
                     Financiado: {formatXLM(p.funded)} / {formatXLM(p.total)} XLM
                   </span>
-                  <span className="text-emerald-700 dark:text-[#4edea3] font-bold">
+                  <span className="text-emerald-700 font-bold">
                     {p.percent}%
                   </span>
                 </div>
-                <div className="w-full h-2 rounded-full bg-slate-200 dark:bg-[#3c4a42] overflow-hidden">
+                <div className="w-full h-2 rounded-full bg-slate-200 overflow-hidden">
                   <div
                     className="h-full bg-emerald-600 rounded-full transition-all duration-500"
                     style={{ width: `${p.percent}%` }}

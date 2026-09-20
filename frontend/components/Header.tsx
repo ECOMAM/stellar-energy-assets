@@ -2,13 +2,11 @@
 
 import { useState, useEffect } from "react";
 import { useWallet } from "@/lib/WalletContext";
-import { useTheme } from "@/lib/ThemeContext";
 import WalletModal from "./WalletModal";
 
 export default function Header() {
   const { address, connected, connecting, connect, disconnect, balance } =
     useWallet();
-  const { theme, toggle } = useTheme();
   const [modalOpen, setModalOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
@@ -23,97 +21,86 @@ export default function Header() {
 
   return (
     <>
-      <header className="fixed top-0 left-0 right-0 z-50 bg-white/90 dark:bg-[#171f33]/90 backdrop-blur-xl border-b border-slate-200/80 dark:border-[#3c4a42]/80 shadow-sm">
+      <header className="fixed top-0 left-0 right-0 z-50 bg-white/90 backdrop-blur-xl border-b border-slate-200/80 shadow-sm">
         <div className="h-16 max-w-7xl mx-auto px-5 lg:px-10 flex items-center justify-between gap-6">
           {/* Logo */}
           <a href="/" className="flex items-center gap-3.5 group">
-            <div className="relative flex items-center justify-center w-11 h-11 rounded-xl bg-gradient-to-br from-emerald-50 dark:from-[#0a2e1a] to-amber-50 dark:to-[#2a1f00] border border-emerald-200 dark:border-[#0a3d22] shadow-sm group-hover:border-emerald-500 transition-all p-1">
-              <span className="material-symbols-outlined text-emerald-600 dark:text-[#4edea3] text-[22px]">
+            <div className="relative flex items-center justify-center w-11 h-11 rounded-xl bg-gradient-to-br from-emerald-50 to-amber-50 border border-emerald-200 shadow-sm group-hover:border-emerald-500 transition-all p-1">
+              <span className="material-symbols-outlined text-emerald-600 text-[22px]">
                 solar_power
               </span>
             </div>
             <div className="flex flex-col">
               <div className="flex items-center gap-1.5">
-                <span className="text-xl tracking-tight font-extrabold text-slate-900 dark:text-[#dae2fd] font-display">
+                <span className="text-xl tracking-tight font-extrabold text-slate-900 font-display">
                   NIKO
-                  <span className="text-amber-600 dark:text-[#f9bd22]">SUN</span>
+                  <span className="text-amber-600">SUN</span>
                 </span>
-                <span className="px-1.5 py-0.5 rounded text-[10px] font-mono bg-emerald-100 dark:bg-[#0a2e1a] text-emerald-800 dark:text-[#4edea3] font-bold border border-emerald-300 dark:border-[#0a3d22]">
+                <span className="px-1.5 py-0.5 rounded text-[10px] font-mono bg-emerald-100 text-emerald-800 font-bold border border-emerald-300">
                   RWA SOLAR
                 </span>
               </div>
-              <span className="font-mono text-[11px] text-emerald-700 dark:text-[#4edea3] font-semibold tracking-wide">
+              <span className="font-mono text-[11px] text-emerald-700 font-semibold tracking-wide">
                 Powered by Stellar Soroban
               </span>
             </div>
           </a>
 
           {/* Nav */}
-          <nav className="hidden lg:flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-stone-50 dark:bg-[#222a3d] border border-stone-200/80 dark:border-[#3c4a42] shadow-inner">
+          <nav className="hidden lg:flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-stone-50 border border-stone-200/80 shadow-inner">
             <a
               href="/#projects"
-              className="text-emerald-900 dark:text-[#4edea3] bg-emerald-100/80 dark:bg-[#0a2e1a] border border-emerald-300 dark:border-[#0a3d22] rounded-full px-4 py-1.5 text-xs font-semibold shadow-sm transition-all"
+              className="text-emerald-900 bg-emerald-100/80 border border-emerald-300 rounded-full px-4 py-1.5 text-xs font-semibold shadow-sm transition-all"
             >
               Proyectos Solares
             </a>
             <a
               href="/#how"
-              className="text-stone-600 dark:text-[#bbcabf] hover:text-emerald-800 dark:hover:text-[#4edea3] hover:bg-emerald-50 dark:hover:bg-[#0a2e1a] rounded-full px-4 py-1.5 text-xs font-medium transition-all"
+              className="text-stone-600 hover:text-emerald-800 hover:bg-emerald-50 rounded-full px-4 py-1.5 text-xs font-medium transition-all"
             >
               Cómo Funciona
             </a>
             <a
               href="/#tech"
-              className="text-stone-600 dark:text-[#bbcabf] hover:text-emerald-800 dark:hover:text-[#4edea3] hover:bg-emerald-50 dark:hover:bg-[#0a2e1a] rounded-full px-4 py-1.5 text-xs font-medium transition-all"
+              className="text-stone-600 hover:text-emerald-800 hover:bg-emerald-50 rounded-full px-4 py-1.5 text-xs font-medium transition-all"
             >
               Seguridad & RWA
             </a>
             <a
               href="#"
-              className="text-stone-600 dark:text-[#bbcabf] hover:text-emerald-800 dark:hover:text-[#4edea3] hover:bg-emerald-50 dark:hover:bg-[#0a2e1a] rounded-full px-4 py-1.5 text-xs font-medium transition-all flex items-center gap-1"
+              className="text-stone-600 hover:text-emerald-800 hover:bg-emerald-50 rounded-full px-4 py-1.5 text-xs font-medium transition-all flex items-center gap-1"
             >
               Docs{" "}
-              <span className="material-symbols-outlined text-[13px] text-stone-400 dark:text-[#86948a]">
+              <span className="material-symbols-outlined text-[13px] text-stone-400">
                 open_in_new
               </span>
             </a>
           </nav>
 
-          {/* Theme Toggle + Network + Wallet */}
+          {/* Network + Wallet */}
           <div className="flex items-center gap-3.5">
-            {/* Theme toggle */}
-            <button
-              onClick={toggle}
-              className="w-9 h-9 rounded-lg bg-surface-container-high dark:bg-[#222a3d] border border-border dark:border-[#3c4a42] flex items-center justify-center hover:bg-slate-100 dark:hover:bg-[#2a3548] transition-all"
-              aria-label="Toggle theme"
-            >
-              <span className="material-symbols-outlined text-[20px] text-slate-600 dark:text-[#bbcabf]">
-                {theme === "dark" ? "light_mode" : "dark_mode"}
-              </span>
-            </button>
-
             {mounted && connected && (
-              <div className="hidden sm:flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-50 dark:bg-[#0a2e1a] border border-emerald-200 dark:border-[#0a3d22] shadow-sm">
+              <div className="hidden sm:flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-50 border border-emerald-200 shadow-sm">
                 <span className="relative flex h-2 w-2">
                   <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-500 opacity-75" />
-                  <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-600 dark:bg-[#4edea3]" />
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-600" />
                 </span>
-                <span className="font-mono text-xs font-semibold text-emerald-800 dark:text-[#4edea3]">
+                <span className="font-mono text-xs font-semibold text-emerald-800">
                   Stellar Testnet
                 </span>
-                <span className="text-[10px] text-stone-500 dark:text-[#86948a] border-l border-emerald-200 dark:border-[#0a3d22] pl-1.5 font-mono">
+                <span className="text-[10px] text-stone-500 border-l border-emerald-200 pl-1.5 font-mono">
                   SOROBAN
                 </span>
               </div>
             )}
 
             {!mounted ? (
-              <div className="h-10 w-40 rounded-xl bg-slate-100 dark:bg-[#222a3d] animate-pulse" />
+              <div className="h-10 w-40 rounded-xl bg-slate-100 animate-pulse" />
             ) : connected && address ? (
               <div className="flex items-center gap-2">
                 <button
                   onClick={disconnect}
-                  className="h-10 px-4 rounded-xl border border-emerald-200 dark:border-[#0a3d22] bg-emerald-50 dark:bg-[#0a2e1a] text-emerald-700 dark:text-[#4edea3] text-xs font-bold shadow-sm hover:bg-emerald-100 dark:hover:bg-[#0a3d22] transition-all flex items-center gap-2"
+                  className="h-10 px-4 rounded-xl border border-emerald-200 bg-emerald-50 text-emerald-700 text-xs font-bold shadow-sm hover:bg-emerald-100 transition-all flex items-center gap-2"
                 >
                   <span className="material-symbols-outlined text-[16px]">
                     account_circle
@@ -121,10 +108,10 @@ export default function Header() {
                   {address.slice(0, 4)}...{address.slice(-4)}
                 </button>
                 <div className="flex flex-col items-end">
-                  <span className="font-mono text-[11px] text-emerald-700 dark:text-[#4edea3] font-bold">
+                  <span className="font-mono text-[11px] text-emerald-700 font-bold">
                     {balance} XLM
                   </span>
-                  <span className="font-mono text-[10px] text-slate-500 dark:text-[#86948a]">
+                  <span className="font-mono text-[10px] text-slate-500">
                     Saldo
                   </span>
                 </div>

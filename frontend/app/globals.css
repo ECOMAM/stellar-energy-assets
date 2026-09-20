@@ -15,7 +15,7 @@
   --color-tertiary: #d97706;
   --color-tertiary-light: #f59e0b;
 
-  /* ── Surface System (Light) ── */
+  /* ── Surface System ── */
   --color-surface: #f8fafc;
   --color-surface-dim: #f1f5f9;
   --color-surface-bright: #ffffff;
@@ -59,57 +59,6 @@
   --color-tertiary-fixed-dim: #ffb599;
 
   --color-surface-tint: #006c4a;
-}
-
-/* ── Dark Theme Overrides ── */
-.dark {
-  --color-surface: #0b1326;
-  --color-surface-dim: #0b1326;
-  --color-surface-bright: #31394d;
-  --color-surface-container: #171f33;
-  --color-surface-container-low: #131b2e;
-  --color-surface-container-high: #222a3d;
-  --color-surface-container-highest: #2d3449;
-  --color-surface-variant: #2d3449;
-
-  --color-background: #0b1326;
-  --color-foreground: #dae2fd;
-  --color-muted: #86948a;
-  --color-border: #3c4a42;
-  --color-outline: #86948a;
-  --color-outline-variant: #3c4a42;
-
-  --color-on-primary: #003824;
-  --color-on-primary-container: #00422b;
-  --color-on-surface: #dae2fd;
-  --color-on-surface-variant: #bbcabf;
-  --color-on-secondary: #552100;
-  --color-on-tertiary: #402d00;
-  --color-on-background: #dae2fd;
-
-  --color-primary: #4edea3;
-  --color-primary-container: #10b981;
-  --color-secondary: #ffb690;
-  --color-secondary-container: #ec6a06;
-  --color-tertiary: #f9bd22;
-  --color-tertiary-container: #ce9a00;
-
-  --color-primary-fixed: #6ffbbe;
-  --color-primary-fixed-dim: #4edea3;
-  --color-secondary-fixed: #ffdbca;
-  --color-secondary-fixed-dim: #ffb690;
-  --color-tertiary-fixed: #ffdf9f;
-  --color-tertiary-fixed-dim: #f9bd22;
-
-  --color-error: #ffb4ab;
-  --color-error-container: #93000a;
-  --color-on-error-container: #ffdad6;
-
-  --color-inverse-surface: #dae2fd;
-  --color-inverse-on-surface: #283044;
-  --color-inverse-primary: #006c49;
-
-  --color-surface-tint: #4edea3;
 }
 
 @layer base {
@@ -160,10 +109,6 @@
   background: rgba(255, 255, 255, 0.9);
   backdrop-filter: blur(16px);
   border: 1px solid rgba(226, 232, 240, 0.8);
-}
-.dark .glass {
-  background: rgba(11, 19, 38, 0.9);
-  border: 1px solid rgba(60, 74, 66, 0.5);
 }
 
 /* ── Chart bar animation ── */
