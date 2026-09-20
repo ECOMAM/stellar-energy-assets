@@ -162,28 +162,9 @@ export default function ProjectDetailClient() {
 
       await new Promise((r) => setTimeout(r, 300));
 
-      // ── Bootstrap: ensure contract initialized + project #1 exists ──
-      // Runs BEFORE purchase. Each wrapped in try/catch:
-      //   initialize panics if already called; create_project panics if exists.
-      // First purchase: 2 extra Freighter popups. Subsequent: fail fast silently.
-      try {
-        await signAndSend(PROJECT.contractId, "initialize", []);
-      } catch {
-        /* already initialized */
-      }
-      try {
-        await signAndSend(PROJECT.contractId, "create_project", [
-          address,
-          "Solar Lima Miraflores",
-          BigInt(100_000),
-          BigInt(10_000_000),
-          BigInt(1),
-        ]);
-      } catch {
-        /* project already exists */
-      }
-
       // ── Purchase tokens ──
+      // NOTE: Contract must be initialized on testnet first.
+      // If you see UnreachableCodeReached, run scripts/init-contract.html once.
       setSigningPhase("signing");
       const { txHash: hash } = await signAndSend(
         PROJECT.contractId,
@@ -226,6 +207,17 @@ export default function ProjectDetailClient() {
         msg.includes("NOT_ENOUGH_BALANCE")
       ) {
         setSigningPhase("insufficient_balance");
+      }
+      // Detect contract not initialized (UnreachableCodeReached)
+      else if (
+        msg.includes("UnreachableCodeReached") ||
+        msg.includes("InvalidAction") ||
+        msg.includes("WasmVm")
+      ) {
+        setSigningError(
+          "Contract not initialized on testnet. Open scripts/init-contract.html and run Steps 1-2 first."
+        );
+        setSigningPhase("error");
       }
       // All other errors
       else {
