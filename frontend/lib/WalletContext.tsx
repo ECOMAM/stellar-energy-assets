@@ -24,6 +24,9 @@ const SERVER_URL =
 const PASSPHRASE =
   process.env.NEXT_PUBLIC_STELLAR_NETWORK_PASSPHRASE ||
   "Test SDF Network ; September 2015";
+const HORIZON_URL =
+  process.env.NEXT_PUBLIC_STELLAR_HORIZON_URL ||
+  "https://horizon-testnet.stellar.org";
 const XLM_TO_USD = 0.13;
 
 interface WalletState {
@@ -58,6 +61,12 @@ interface WalletContextType extends WalletState {
     calls: ContractCall[],
     signWith?: string
   ) => Promise<{ txHash: string; result?: unknown }>;
+  /** Read-only contract call (simulates, doesn't submit). */
+  readContract: (
+    contractId: string,
+    method: string,
+    args?: unknown[]
+  ) => Promise<unknown>;
   fetchBalance: () => Promise<void>;
 }
 
@@ -88,9 +97,6 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   const fetchBalance = useCallback(async () => {
     if (!state.address) return;
     try {
-      const HORIZON_URL =
-        process.env.NEXT_PUBLIC_STELLAR_HORIZON_URL ||
-        "https://horizon-testnet.stellar.org";
       const res = await fetch(`${HORIZON_URL}/accounts/${state.address}`);
       if (!res.ok) return;
       const data = await res.json();
@@ -151,6 +157,14 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   // ── Shared helper: convert args to ScVal ──
+  // Methods where project_id (index 1) is u64: purchase_tokens, deposit_revenue, claim_revenue,
+  // withdraw_sales, update_energy, get_project, get_project_name, get_sales_balance, get_claimable
+  const u64ProjectMethods = new Set([
+    "purchase_tokens", "deposit_revenue", "claim_revenue", "withdraw_sales",
+    "update_energy", "get_project", "get_project_name", "get_sales_balance",
+    "get_claimable", "set_project_status", "transfer_ownership",
+  ]);
+
   const toScVals = useCallback(
     async (args: unknown[], method?: string) => {
       const sdk = await import("@stellar/stellar-sdk");
@@ -160,12 +174,11 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         }
 
         if (typeof a === "bigint" || typeof a === "number") {
-          const expectedType =
-            method === "purchase_tokens" && index === 1
-              ? "u64"
-              : "u128";
+          // project_id (index 1) is u64 for most methods
+          const isU64 =
+            index === 1 && method && u64ProjectMethods.has(method);
 
-          if (expectedType === "u64") {
+          if (isU64) {
             return sdk.nativeToScVal(BigInt(a.toString()), { type: "u64" });
           }
 
@@ -300,6 +313,37 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     [state.address, toScVals, buildSignSendPoll]
   );
 
+  // Read-only contract call — simulates the transaction without submitting
+  const readContract = useCallback(
+    async (contractId: string, method: string, args: unknown[] = []) => {
+      const sdk = await import("@stellar/stellar-sdk");
+      const server = new sdk.rpc.Server(HORIZON_URL);
+      const contract = new sdk.Contract(contractId);
+      const sorobanArgs = await toScVals(args, method);
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const op = contract.call(method, ...(sorobanArgs as any[]));
+      const source = new sdk.Account(
+        state.address || "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
+        "0"
+      );
+      const tx = new sdk.TransactionBuilder(source, {
+        fee: "100",
+        networkPassphrase: PASSPHRASE,
+      })
+        .addOperation(op)
+        .setTimeout(30)
+        .build();
+
+      const result = await server.simulateTransaction(tx);
+      if (sdk.rpc.Api.isSimulationError(result)) {
+        throw new Error(`Simulation failed: ${result.error}`);
+      }
+      return result.result?.retval;
+    },
+    [state.address, toScVals]
+  );
+
   // Auto-reconnect on mount (client-only)
   useEffect(() => {
     if (!mounted) return;
@@ -336,6 +380,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         disconnect,
         signAndSend,
         signAndSendBatch,
+        readContract,
         fetchBalance,
       }}
     >

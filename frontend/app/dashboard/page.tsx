@@ -329,6 +329,7 @@ function DashboardView({
   setView,
   signAndSend,
   connected,
+  address,
 }: {
   setView: (v: View) => void;
   signAndSend: (
@@ -337,14 +338,16 @@ function DashboardView({
     args: unknown[]
   ) => Promise<{ txHash: string; result?: unknown }>;
   connected: boolean;
+  address?: string | null;
 }) {
   const [claiming, setClaiming] = useState(false);
 
   const handleClaimAll = async () => {
-    if (!connected) return;
+    if (!connected || !address) return;
     setClaiming(true);
     try {
-      await signAndSend(CONTRACT_ID, "claim_revenue", [0]);
+      // contract: claim_revenue(investor: Address, project_id: u64)
+      await signAndSend(CONTRACT_ID, "claim_revenue", [address, 0]);
     } catch (e) {
       console.error("Claim failed:", e);
     } finally {
@@ -556,6 +559,7 @@ function DashboardView({
 function ClaimView({
   signAndSend,
   connected,
+  address,
 }: {
   signAndSend: (
     contractId: string,
@@ -563,15 +567,17 @@ function ClaimView({
     args: unknown[]
   ) => Promise<{ txHash: string; result?: unknown }>;
   connected: boolean;
+  address?: string | null;
 }) {
   const [claiming, setClaiming] = useState(false);
   const [lastTxHash, setLastTxHash] = useState<string | null>(null);
 
   const handleClaimAll = async () => {
-    if (!connected) return;
+    if (!connected || !address) return;
     setClaiming(true);
     try {
-      const { txHash } = await signAndSend(CONTRACT_ID, "claim_revenue", [0]);
+      // contract: claim_revenue(investor: Address, project_id: u64)
+      const { txHash } = await signAndSend(CONTRACT_ID, "claim_revenue", [address, 0]);
       setLastTxHash(txHash);
     } catch (e) {
       console.error("Claim failed:", e);
@@ -581,10 +587,12 @@ function ClaimView({
   };
 
   const handleClaimProject = async (projectId: number) => {
-    if (!connected) return;
+    if (!connected || !address) return;
     setClaiming(true);
     try {
+      // contract: claim_revenue(investor: Address, project_id: u64)
       const { txHash } = await signAndSend(CONTRACT_ID, "claim_revenue", [
+        address,
         projectId,
       ]);
       setLastTxHash(txHash);
@@ -756,6 +764,7 @@ function AdminView() {
   const { signAndSend, connected, address } = useWallet();
   const [creating, setCreating] = useState(false);
   const [depositing, setDepositing] = useState<number | null>(null);
+  const [withdrawing, setWithdrawing] = useState<number | null>(null);
   const [form, setForm] = useState({
     name: "",
     supply: "",
@@ -783,14 +792,39 @@ function AdminView() {
   };
 
   const handleDepositRevenue = async (projectId: number) => {
-    if (!connected) return;
+    if (!connected || !address) return;
     setDepositing(projectId);
     try {
-      await signAndSend(CONTRACT_ID, "deposit_revenue", [projectId, 10]);
+      // contract: deposit_revenue(depositor: Address, project_id: u64, amount: u128, energy_kwh_delta: u128)
+      const amountStroops = BigInt(10) * BigInt(1_000_000); // 10 XLM in stroops
+      await signAndSend(CONTRACT_ID, "deposit_revenue", [
+        address,
+        projectId,
+        amountStroops,
+        BigInt(0), // energy_kwh_delta — no IoT yet
+      ]);
     } catch (e) {
       console.error("Deposit revenue failed:", e);
     } finally {
       setDepositing(null);
+    }
+  };
+
+  const handleWithdrawSales = async (projectId: number) => {
+    if (!connected || !address) return;
+    setWithdrawing(projectId);
+    try {
+      // contract: withdraw_sales(caller: Address, project_id: u64, amount: u128)
+      const amountStroops = BigInt(5) * BigInt(1_000_000); // 5 XLM in stroops
+      await signAndSend(CONTRACT_ID, "withdraw_sales", [
+        address,
+        projectId,
+        amountStroops,
+      ]);
+    } catch (e) {
+      console.error("Withdraw sales failed:", e);
+    } finally {
+      setWithdrawing(null);
     }
   };
 
@@ -924,6 +958,13 @@ function AdminView() {
                   >
                     {depositing === p.projectId ? "..." : "Depositar"}
                   </button>
+                  <button
+                    onClick={() => handleWithdrawSales(p.projectId)}
+                    disabled={!connected || withdrawing === p.projectId}
+                    className="border border-amber-200 bg-white text-amber-600 hover:bg-amber-50 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors disabled:opacity-50"
+                  >
+                    {withdrawing === p.projectId ? "..." : "Retirar"}
+                  </button>
                   <button className="text-slate-400 hover:text-slate-600">
                     <span className="material-symbols-outlined text-[18px]">
                       more_horiz
@@ -1014,6 +1055,7 @@ export default function Page() {
                 setView={setView}
                 signAndSend={signAndSend}
                 connected={connected}
+                address={address}
               />
             )}
             {view === "projects" && (
@@ -1039,6 +1081,7 @@ export default function Page() {
               <ClaimView
                 signAndSend={signAndSend}
                 connected={connected}
+                address={address}
               />
             )}
             {view === "admin" && <AdminView />}

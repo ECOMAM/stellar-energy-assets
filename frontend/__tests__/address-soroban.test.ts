@@ -15,7 +15,8 @@ describe("Stellar Address to ScVal conversion", () => {
     const scVal = addr.toScVal();
     expect(scVal).toBeDefined();
     const xdrBytes = scVal.toXDR();
-    expect(xdrBytes).toBeInstanceOf(Buffer);
+    // SDK v17 returns Uint8Array, not Buffer
+    expect(xdrBytes).toBeInstanceOf(Uint8Array);
     expect(xdrBytes.length).toBeGreaterThan(0);
   });
 
@@ -57,6 +58,7 @@ describe("Stellar Address to ScVal conversion", () => {
     const encoded = nativeToScVal(BigInt(1), { type: "u64" });
     expect(encoded).toBeDefined();
     const xdrBytes = encoded.toXDR();
-    expect(Buffer.isBuffer(xdrBytes)).toBe(true);
+    // SDK v17 returns Uint8Array, not Buffer
+    expect(xdrBytes).toBeInstanceOf(Uint8Array);
   });
 });
