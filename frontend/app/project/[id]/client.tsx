@@ -4,12 +4,12 @@ import { useState, useCallback, useEffect } from "react";
 import { useWallet } from "@/lib/WalletContext";
 import TransactionSigningModal from "@/components/TransactionSigningModal";
 import TransactionSuccess from "@/components/TransactionSuccess";
+import { CONTRACT_ID } from "@/lib/contract";
 
 /* ──────────────────── Constants ──────────────────── */
 
 const PROJECT = {
-  contractId:
-    "CB7V3676CQBO5OL6DEXI5FORLG37IR2GR7LXCZD7DUZTMSUT7BEEINR3",
+  contractId: CONTRACT_ID,
   name: "Parque Solar Lima Norte",
   flag: "\uD83C\uDDF5\uD83C\uDDF7",
   slug: "lima-norte",
@@ -156,18 +156,15 @@ export default function ProjectDetailClient() {
     setSigningPhase("preparing");
 
     try {
-      const paymentStroops = BigInt(
-        Math.round(tokenCount * pricePerToken * 1_000_000)
-      );
-
       await new Promise((r) => setTimeout(r, 300));
 
       // ── Purchase tokens ──
+      // contract: purchase_tokens(buyer: Address, project_id: u64, amount: u128)
       setSigningPhase("signing");
       const { txHash: hash } = await signAndSend(
         PROJECT.contractId,
         "purchase_tokens",
-        [address, BigInt(1), BigInt(tokenCount), paymentStroops]
+        [address, BigInt(1), BigInt(tokenCount)]
       );
 
       setTxHash(hash);

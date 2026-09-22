@@ -317,7 +317,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   const readContract = useCallback(
     async (contractId: string, method: string, args: unknown[] = []) => {
       const sdk = await import("@stellar/stellar-sdk");
-      const server = new sdk.rpc.Server(HORIZON_URL);
+      const server = new sdk.rpc.Server(SERVER_URL);
       const contract = new sdk.Contract(contractId);
       const sorobanArgs = await toScVals(args, method);
 

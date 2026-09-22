@@ -4,10 +4,7 @@ import { useState, useCallback } from "react";
 import { cn } from "@/lib/utils";
 import { useWallet } from "@/lib/WalletContext";
 import PdfCertificate from "@/components/PdfCertificate";
-
-/* ── Constants ── */
-const CONTRACT_ID =
-  "CB7V3676CQBO5OL6DEXI5FORLG37IR2GR7LXCZD7DUZTMSUT7BEEINR3";
+import { CONTRACT_ID } from "@/lib/contract";
 
 type View = "dashboard" | "projects" | "claim" | "metrics" | "admin";
 
@@ -347,7 +344,7 @@ function DashboardView({
     setClaiming(true);
     try {
       // contract: claim_revenue(investor: Address, project_id: u64)
-      await signAndSend(CONTRACT_ID, "claim_revenue", [address, 0]);
+      await signAndSend(CONTRACT_ID, "claim_revenue", [address, 1]);
     } catch (e) {
       console.error("Claim failed:", e);
     } finally {
@@ -577,7 +574,7 @@ function ClaimView({
     setClaiming(true);
     try {
       // contract: claim_revenue(investor: Address, project_id: u64)
-      const { txHash } = await signAndSend(CONTRACT_ID, "claim_revenue", [address, 0]);
+      const { txHash } = await signAndSend(CONTRACT_ID, "claim_revenue", [address, 1]);
       setLastTxHash(txHash);
     } catch (e) {
       console.error("Claim failed:", e);
