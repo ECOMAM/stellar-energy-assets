@@ -47,8 +47,8 @@ jobs:
         run: |
           # Native XLM Stellar Asset Contract on the target network
           NATIVE_TOKEN=$(stellar contract id asset --asset native --network testnet)
-          # Derive the deployer public key from the raw secret (no CLI identity needed)
-          DEPLOYER_PUBLIC=$(npx -y -p @stellar/stellar-base node -e 'console.log(require("@stellar/stellar-base").Keypair.fromSecret(process.env.DEPLOYER_SECRET).publicKey())')
+          # Deployer public key; `stellar keys public-key` accepts a raw secret key
+          DEPLOYER_PUBLIC=$(stellar keys public-key "$DEPLOYER_SECRET")
           echo "DEPLOYER_PUBLIC=$DEPLOYER_PUBLIC" >> $GITHUB_ENV
           CONTRACT_ID=$(stellar contract deploy \
             --wasm niko_project_opt.wasm \
