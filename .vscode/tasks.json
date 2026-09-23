@@ -1,0 +1,19 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "Rust contract tests",
+			"type": "shell",
+			"command": "cargo test --manifest-path contracts/niko_project/Cargo.toml",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Stellar contract spec lookup",
+			"type": "shell",
+			"command": "stellar contract spec --id CDVT6PV536ALTEEXCAVWASGUOG5PHUJCA2WTVWYPZI5Z5KKTECCL6GY4 --network testnet",
+			"isBackground": false,
+			"problemMatcher": []
+		}
+	]
+}
