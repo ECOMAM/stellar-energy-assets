@@ -169,6 +169,35 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     async (args: unknown[], method?: string) => {
       const sdk = await import("@stellar/stellar-sdk");
       return args.map((a: unknown, index: number) => {
+        if (Array.isArray(a)) {
+          const isU64Vec = method === "get_portfolio" && index === 1;
+          const innerVals = (a as unknown[]).map((item: unknown) => {
+            if (
+              typeof item === "string" &&
+              /^[GC][A-Z0-9]{55}$/.test(item as string)
+            ) {
+              return sdk.Address.fromString(item as string).toScVal();
+            }
+            if (typeof item === "boolean") {
+              return sdk.nativeToScVal(item, { type: "bool" });
+            }
+            if (typeof item === "bigint" || typeof item === "number") {
+              const t = isU64Vec ? "u64" : "u128";
+              return sdk.nativeToScVal(
+                BigInt((item as number | bigint).toString()),
+                { type: t as "u64" | "u128" }
+              );
+            }
+            if (typeof item === "string") {
+              return sdk.nativeToScVal(item as string, { type: "string" });
+            }
+            return sdk.nativeToScVal(item as unknown);
+          });
+          return sdk.xdr.ScVal.scvVec(innerVals);
+        }
+        if (typeof a === "boolean") {
+          return sdk.nativeToScVal(a, { type: "bool" });
+        }
         if (typeof a === "string" && /^[GC][A-Z0-9]{55}$/.test(a)) {
           return sdk.Address.fromString(a).toScVal();
         }
@@ -317,7 +346,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   const readContract = useCallback(
     async (contractId: string, method: string, args: unknown[] = []) => {
       const sdk = await import("@stellar/stellar-sdk");
-      const server = new sdk.rpc.Server(HORIZON_URL);
+      const server = new sdk.rpc.Server(SERVER_URL);
       const contract = new sdk.Contract(contractId);
       const sorobanArgs = await toScVals(args, method);
 
