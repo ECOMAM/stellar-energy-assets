@@ -1,14 +1,12 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { cn } from "@/lib/utils";
 import { useWallet } from "@/lib/WalletContext";
+import { CONTRACT_ID } from "@/lib/contract";
 import PdfCertificate from "@/components/PdfCertificate";
 
 /* ── Constants ── */
-const CONTRACT_ID =
-  "CB7V3676CQBO5OL6DEXI5FORLG37IR2GR7LXCZD7DUZTMSUT7BEEINR3";
-
 type View = "dashboard" | "projects" | "claim" | "metrics" | "admin";
 
 const projects = [
@@ -129,6 +127,7 @@ function StatCard({
   change,
   action,
   onAction,
+  demo,
 }: {
   icon: string;
   label: string;
@@ -136,9 +135,15 @@ function StatCard({
   change?: string;
   action?: string;
   onAction?: () => void;
+  demo?: boolean;
 }) {
   return (
     <div className="bg-white border border-slate-200 rounded-xl shadow-md relative overflow-hidden p-5">
+      {demo && (
+        <span className="absolute top-2 right-2 px-1.5 py-0.5 rounded text-[9px] font-mono font-bold bg-amber-50 border border-amber-200 text-amber-700">
+          DEMO
+        </span>
+      )}
       <div className="mb-5 flex items-center justify-between">
         <div className="grid size-9 place-items-center rounded-lg bg-emerald-50 text-emerald-600">
           <span className="material-symbols-outlined text-[18px]">{icon}</span>
@@ -244,15 +249,30 @@ function Sidebar({
 function ProjectCard({
   project,
   onSelect,
+  realProgress,
+  realPrice,
+  isLoading,
 }: {
   project: (typeof projects)[number];
   onSelect: () => void;
+  realProgress?: number | null;
+  realPrice?: string | null;
+  isLoading?: boolean;
 }) {
+  const displayProgress = realProgress != null ? realProgress : project.progress;
+  const displayPrice = realPrice != null ? realPrice : "10 XLM";
+  const isDemo = realProgress == null && !isLoading;
   return (
     <button
       onClick={onSelect}
-      className="bg-white border border-slate-200 rounded-xl shadow-md group text-left transition hover:-translate-y-0.5 hover:border-emerald-300 w-full"
+      className="bg-white border border-slate-200 rounded-xl shadow-md group text-left transition hover:-translate-y-0.5 hover:border-emerald-300 w-full relative"
+      style={isLoading ? { opacity: 0.7 } : undefined}
     >
+      {isDemo && (
+        <span className="absolute top-2 right-2 z-10 px-1.5 py-0.5 rounded text-[9px] font-mono font-bold bg-amber-50 border border-amber-200 text-amber-700">
+          DEMO
+        </span>
+      )}
       <div
         className={cn(
           "h-1 rounded-t-xl",
@@ -289,13 +309,18 @@ function ProjectCard({
             <div className="text-[11px] text-slate-500">APY estimado</div>
             <div className="mt-1 font-mono text-sm text-emerald-600">
               {project.apy}
+              <sup className="ml-1 text-[10px] text-slate-400" title="Proyección PPA, no garantizada">
+                *Estimado
+              </sup>
             </div>
           </div>
         </div>
         <MiniChart orange={project.tone === "orange"} />
         <div className="mt-4 flex items-center justify-between text-xs">
           <span className="text-slate-500">Tokens vendidos</span>
-          <span className="font-mono text-slate-600">{project.progress}%</span>
+          <span className="font-mono text-slate-600" title={isDemo ? "Valor demo — conectando a testnet" : "Valor on-chain: minted/total_supply"}>
+            {isLoading ? "…" : `${displayProgress}%`}
+          </span>
         </div>
         <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-slate-100">
           <div
@@ -303,12 +328,12 @@ function ProjectCard({
               "h-full rounded-full",
               project.tone === "orange" ? "bg-orange-500" : "bg-emerald-500"
             )}
-            style={{ width: `${project.progress}%` }}
+            style={{ width: `${displayProgress}%` }}
           />
         </div>
         <div className="mt-5 flex items-center justify-between">
-          <span className="font-mono text-sm text-slate-900">
-            10 XLM{" "}
+          <span className="font-mono text-sm text-slate-900" title={isDemo ? "Precio demo — on-chain fallback 10 XLM" : `Precio on-chain: ${displayPrice} stroops→XLM`}>
+            {displayPrice}{" "}
             <span className="font-sans text-xs text-slate-500">/ token</span>
           </span>
           <span className="text-xs text-emerald-600">
@@ -341,19 +366,152 @@ function DashboardView({
   address?: string | null;
 }) {
   const [claiming, setClaiming] = useState(false);
+  const { readContract } = useWallet();
+  const [chainProjects, setChainProjects] = useState<Record<number, { progress: number; priceXlm: string; minted: bigint; total: bigint } > | null>(null);
+  const [isChainLoading, setIsChainLoading] = useState(true);
+  const [realClaimable, setRealClaimable] = useState<string | null>(null);
+  const [isPortfolioLoading, setIsPortfolioLoading] = useState(false);
 
   const handleClaimAll = async () => {
     if (!connected || !address) return;
     setClaiming(true);
     try {
-      // contract: claim_revenue(investor: Address, project_id: u64)
-      await signAndSend(CONTRACT_ID, "claim_revenue", [address, 0]);
+      // contract: claim_revenue(investor: Address, project_id: u64) — IDs start at 1
+      await signAndSend(CONTRACT_ID, "claim_revenue", [address, 1]);
     } catch (e) {
       console.error("Claim failed:", e);
     } finally {
       setClaiming(false);
     }
   };
+
+  // Fetch on-chain project data: next_project_id + get_project loop
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const sdk = await import("@stellar/stellar-sdk");
+        const decode = (val: unknown) => {
+          try {
+            return (sdk as unknown as { scValToNative: (v: unknown) => unknown }).scValToNative(val as never);
+          } catch {
+            return val;
+          }
+        };
+        let nextId = 1;
+        try {
+          const rawNext = await readContract(CONTRACT_ID, "next_project_id", []);
+          const decoded = decode(rawNext);
+          if (typeof decoded === "bigint") nextId = Number(decoded);
+          else if (typeof decoded === "number") nextId = decoded;
+          else if (decoded != null) nextId = Number(decoded as string);
+        } catch (e) {
+          console.warn("next_project_id failed, using fallback", e);
+          nextId = 4; // fallback to try 1..3
+        }
+        const ids = [];
+        for (let i = 1; i < nextId; i++) ids.push(i);
+        // limit to 3 for UI, but if nextId is 1 (no project yet) fallback to 1..3 to show demo gracefully
+        const fetchIds = ids.length > 0 ? ids.slice(0, 3) : [1, 2, 3];
+        const results = await Promise.all(
+          fetchIds.map(async (id) => {
+            try {
+              const raw = await readContract(CONTRACT_ID, "get_project", [id]);
+              const p = decode(raw) as Record<string, unknown>;
+              const total = BigInt((p.total_supply ?? p.totalSupply ?? 0) as string | number | bigint);
+              const minted = BigInt((p.minted ?? 0) as string | number | bigint);
+              const price = BigInt((p.price ?? 0) as string | number | bigint);
+              const progress = total > BigInt(0) ? Number((minted * BigInt(100)) / total) : 0;
+              const priceXlm = (Number(price) / 1_000_000).toLocaleString("en-US", { maximumFractionDigits: 2 }) + " XLM";
+              return { id, progress, priceXlm, minted, total };
+            } catch (e) {
+              console.warn(`get_project(${id}) failed, keeping mock`, e);
+              return null;
+            }
+          })
+        );
+        if (cancelled) return;
+        const map: Record<number, { progress: number; priceXlm: string; minted: bigint; total: bigint }> = {};
+        results.forEach((r) => {
+          if (r) map[r.id] = r;
+        });
+        if (Object.keys(map).length > 0) setChainProjects(map);
+      } catch (e) {
+        console.warn("chain projects fetch failed", e);
+      } finally {
+        if (!cancelled) setIsChainLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [readContract]);
+
+  // Fetch real dividends via get_portfolio or get_claimable
+  useEffect(() => {
+    if (!connected || !address) {
+      setRealClaimable(null);
+      return;
+    }
+    let cancelled = false;
+    setIsPortfolioLoading(true);
+    (async () => {
+      try {
+        const sdk = await import("@stellar/stellar-sdk");
+        const decode = (val: unknown) => {
+          try {
+            return (sdk as unknown as { scValToNative: (v: unknown) => unknown }).scValToNative(val as never);
+          } catch {
+            return val;
+          }
+        };
+        // Try get_portfolio for [1,2,3]
+        let totalClaimable = BigInt(0);
+        try {
+          const raw = await readContract(CONTRACT_ID, "get_portfolio", [address, [1, 2, 3]]);
+          const positions = decode(raw) as Array<Record<string, unknown>>;
+          if (Array.isArray(positions)) {
+            for (const pos of positions) {
+              const amt = BigInt((pos.claimable_amount ?? pos.claimableAmount ?? 0) as string | number | bigint);
+              totalClaimable += amt;
+            }
+          }
+        } catch {
+          // fallback: per-project get_claimable
+          const ids = [1, 2, 3];
+          for (const pid of ids) {
+            try {
+              const raw = await readContract(CONTRACT_ID, "get_claimable", [address, pid]);
+              const val = decode(raw);
+              totalClaimable += BigInt(val as string | number | bigint);
+            } catch (e) {
+              console.warn(`get_claimable ${pid} failed`, e);
+            }
+          }
+        }
+        if (!cancelled) {
+          if (totalClaimable > BigInt(0)) {
+            const xlm = Number(totalClaimable) / 1_000_000;
+            setRealClaimable(xlm.toLocaleString("en-US", { maximumFractionDigits: 2 }));
+          } else {
+            setRealClaimable("0.00");
+          }
+        }
+      } catch (e) {
+        console.warn("portfolio fetch failed", e);
+      } finally {
+        if (!cancelled) setIsPortfolioLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [connected, address, readContract]);
+
+  const dividendDisplay = connected && realClaimable != null ? `${realClaimable} XLM` : "23.4 XLM";
+  const dividendIsDemo = !connected || realClaimable == null;
+  const investmentDisplay = "450 XLM";
+  const tokensDisplay = "45";
 
   return (
     <div className="flex flex-col gap-7">
@@ -384,21 +542,24 @@ function DashboardView({
         <StatCard
           icon="payments"
           label="Mi inversión"
-          value="450 XLM"
+          value={investmentDisplay}
           change="+12.5% ↑"
+          demo={dividendIsDemo}
         />
         <StatCard
           icon="bolt"
           label="Dividendos pendientes"
-          value="23.4 XLM"
+          value={isPortfolioLoading ? "…" : dividendDisplay}
           action="Reclamar todo"
           onAction={handleClaimAll}
+          demo={dividendIsDemo}
         />
         <StatCard
           icon="eco"
           label="Tokens en posesión"
-          value="45"
+          value={tokensDisplay}
           change="En 3 proyectos"
+          demo={dividendIsDemo}
         />
       </div>
 
@@ -423,13 +584,20 @@ function DashboardView({
           </button>
         </div>
         <div className="grid gap-4 lg:grid-cols-3">
-          {projects.map((p) => (
-            <ProjectCard
-              key={p.name}
-              project={p}
-              onSelect={() => setView("projects")}
-            />
-          ))}
+          {projects.map((p, idx) => {
+            const chainId = idx + 1;
+            const chain = chainProjects?.[chainId];
+            return (
+              <ProjectCard
+                key={p.name}
+                project={p}
+                onSelect={() => setView("projects")}
+                realProgress={chain?.progress ?? null}
+                realPrice={chain?.priceXlm ?? null}
+                isLoading={isChainLoading}
+              />
+            );
+          })}
         </div>
       </section>
 
@@ -478,7 +646,7 @@ function DashboardView({
                       {p.invested} XLM
                     </td>
                     <td className="py-4 font-mono text-emerald-600">
-                      {p.dividends} XLM
+                      {p.dividends} XLM {dividendIsDemo && <span className="ml-1 px-1 py-0.5 rounded bg-amber-50 border border-amber-200 text-amber-700 text-[9px]">DEMO</span>}
                     </td>
                     <td className="py-4">
                       <span className="text-emerald-600 flex items-center gap-1">
@@ -571,13 +739,60 @@ function ClaimView({
 }) {
   const [claiming, setClaiming] = useState(false);
   const [lastTxHash, setLastTxHash] = useState<string | null>(null);
+  const { readContract } = useWallet();
+  const [claimables, setClaimables] = useState<Record<number, string> | null>(null);
+  const [totalClaimable, setTotalClaimable] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!connected || !address) {
+      setClaimables(null);
+      setTotalClaimable(null);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const sdk = await import("@stellar/stellar-sdk");
+        const decode = (val: unknown) => {
+          try {
+            return (sdk as unknown as { scValToNative: (v: unknown) => unknown }).scValToNative(val as never);
+          } catch {
+            return val;
+          }
+        };
+        const ids = [1, 2, 3];
+        const map: Record<number, string> = {};
+        let total = BigInt(0);
+        for (const pid of ids) {
+          try {
+            const raw = await readContract(CONTRACT_ID, "get_claimable", [address, pid]);
+            const val = decode(raw);
+            const bi = BigInt(val as string | number | bigint);
+            total += bi;
+            map[pid] = (Number(bi) / 1_000_000).toLocaleString("en-US", { maximumFractionDigits: 2 });
+          } catch {
+            map[pid] = "—";
+          }
+        }
+        if (!cancelled) {
+          setClaimables(map);
+          setTotalClaimable((Number(total) / 1_000_000).toLocaleString("en-US", { maximumFractionDigits: 2 }));
+        }
+      } catch (e) {
+        console.warn("claimables fetch failed", e);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [connected, address, readContract]);
 
   const handleClaimAll = async () => {
     if (!connected || !address) return;
     setClaiming(true);
     try {
-      // contract: claim_revenue(investor: Address, project_id: u64)
-      const { txHash } = await signAndSend(CONTRACT_ID, "claim_revenue", [address, 0]);
+      // contract: claim_revenue(investor: Address, project_id: u64) — demo uses 1
+      const { txHash } = await signAndSend(CONTRACT_ID, "claim_revenue", [address, 1]);
       setLastTxHash(txHash);
     } catch (e) {
       console.error("Claim failed:", e);
@@ -590,10 +805,10 @@ function ClaimView({
     if (!connected || !address) return;
     setClaiming(true);
     try {
-      // contract: claim_revenue(investor: Address, project_id: u64)
+      const normalized = projectId === 0 ? 1 : projectId;
       const { txHash } = await signAndSend(CONTRACT_ID, "claim_revenue", [
         address,
-        projectId,
+        normalized,
       ]);
       setLastTxHash(txHash);
     } catch (e) {
@@ -602,6 +817,9 @@ function ClaimView({
       setClaiming(false);
     }
   };
+
+  const displayTotal = connected && totalClaimable != null ? totalClaimable : "23.4";
+  const isDemo = !connected || totalClaimable == null;
 
   return (
     <div className="mx-auto flex w-full max-w-3xl flex-col gap-6">
@@ -618,12 +836,20 @@ function ClaimView({
       </div>
 
       {/* Total Card */}
-      <div className="overflow-hidden rounded-2xl border border-orange-200 bg-gradient-to-br from-orange-50 via-white to-emerald-50 p-6">
+      <div className="overflow-hidden rounded-2xl border border-orange-200 bg-gradient-to-br from-orange-50 via-white to-emerald-50 p-6 relative">
+        {isDemo && (
+          <span className="absolute top-3 right-3 px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-amber-50 border border-amber-200 text-amber-700">
+            DEMO • Testnet
+          </span>
+        )}
         <div className="text-sm text-slate-500">Total disponible</div>
         <div className="mt-2 font-mono text-4xl font-bold text-slate-900">
-          23.4{" "}
+          {displayTotal}{" "}
           <span className="text-xl text-orange-600">XLM</span>
         </div>
+        {!connected && (
+          <p className="mt-2 text-xs text-amber-700">Conecta tu wallet para ver dividendos reales. Valor mostrado es simulado.</p>
+        )}
         <button
           onClick={handleClaimAll}
           disabled={!connected || claiming}
@@ -647,28 +873,34 @@ function ClaimView({
         <div className="p-5 font-semibold text-slate-900 font-display">
           Desglose por proyecto
         </div>
-        {projects.map((p) => (
-          <div key={p.name} className="flex items-center justify-between p-5">
-            <div>
-              <div className="font-medium text-slate-700">{p.name}</div>
-              <div className="mt-1 text-xs text-slate-500">
-                {p.energy} kWh generados
+        {projects.map((p) => {
+          const pid = p.projectId === 0 ? 1 : p.projectId;
+          const real = claimables?.[pid];
+          const display = real != null ? real : p.dividends;
+          const demoBadge = !connected || claimables == null;
+          return (
+            <div key={p.name} className="flex items-center justify-between p-5">
+              <div>
+                <div className="font-medium text-slate-700">{p.name}</div>
+                <div className="mt-1 text-xs text-slate-500">
+                  {p.energy} kWh generados {demoBadge && <span className="ml-1 px-1 py-0.5 rounded bg-amber-50 border border-amber-200 text-amber-700 text-[9px]">DEMO</span>}
+                </div>
+              </div>
+              <div className="flex items-center gap-4">
+                <span className="font-mono text-emerald-600">
+                  {display} XLM
+                </span>
+                <button
+                  onClick={() => handleClaimProject(p.projectId)}
+                  disabled={!connected || claiming}
+                  className="border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors disabled:opacity-50"
+                >
+                  Reclamar
+                </button>
               </div>
             </div>
-            <div className="flex items-center gap-4">
-              <span className="font-mono text-emerald-600">
-                {p.dividends} XLM
-              </span>
-              <button
-                onClick={() => handleClaimProject(p.projectId)}
-                disabled={!connected || claiming}
-                className="border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors disabled:opacity-50"
-              >
-                Reclamar
-              </button>
-            </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
 
       {/* Certificate after successful claim */}
@@ -721,18 +953,21 @@ function MetricsView() {
           label="Energía generada"
           value="1.2M kWh"
           change="+18.4%"
+          demo
         />
         <StatCard
           icon="payments"
           label="Revenue distribuido"
           value="340 XLM"
           change="+8.2%"
+          demo
         />
         <StatCard
           icon="eco"
           label="CO₂ evitado"
           value="628 t"
           change="+14.1%"
+          demo
         />
       </div>
       <div className="bg-white border border-slate-200 rounded-xl shadow-md mt-5 p-6">
@@ -745,8 +980,8 @@ function MetricsView() {
               Últimos 30 días — todos los proyectos
             </p>
           </div>
-          <span className="rounded-full bg-emerald-50 px-2 py-1 text-xs text-emerald-700 border border-emerald-200">
-            En vivo
+          <span className="rounded-full bg-amber-50 px-2 py-1 text-xs text-amber-700 border border-amber-200">
+            DEMO • Simulado
           </span>
         </div>
         <MiniChart />
@@ -797,9 +1032,10 @@ function AdminView() {
     try {
       // contract: deposit_revenue(depositor: Address, project_id: u64, amount: u128, energy_kwh_delta: u128)
       const amountStroops = BigInt(10) * BigInt(1_000_000); // 10 XLM in stroops
+      const normalized = projectId === 0 ? 1 : projectId;
       await signAndSend(CONTRACT_ID, "deposit_revenue", [
         address,
-        projectId,
+        normalized,
         amountStroops,
         BigInt(0), // energy_kwh_delta — no IoT yet
       ]);
@@ -816,9 +1052,10 @@ function AdminView() {
     try {
       // contract: withdraw_sales(caller: Address, project_id: u64, amount: u128)
       const amountStroops = BigInt(5) * BigInt(1_000_000); // 5 XLM in stroops
+      const normalized = projectId === 0 ? 1 : projectId;
       await signAndSend(CONTRACT_ID, "withdraw_sales", [
         address,
-        projectId,
+        normalized,
         amountStroops,
       ]);
     } catch (e) {
@@ -843,16 +1080,18 @@ function AdminView() {
       </div>
 
       <div className="grid gap-4 md:grid-cols-3">
-        <StatCard icon="wb_sunny" label="Tus proyectos" value="3" />
+        <StatCard icon="wb_sunny" label="Tus proyectos" value="3" demo />
         <StatCard
           icon="payments"
           label="Total invertido"
           value="1,250 XLM"
+          demo
         />
         <StatCard
           icon="bolt"
           label="Revenue depositado"
           value="340 XLM"
+          demo
         />
       </div>
 
@@ -947,7 +1186,7 @@ function AdminView() {
                 <div>
                   <div className="font-medium text-slate-700">{p.name}</div>
                   <div className="mt-1 text-xs text-slate-500">
-                    {p.capacity} — {p.progress}% vendido
+                    {p.capacity} — {p.progress}% vendido <span className="ml-1 px-1 py-0.5 rounded bg-amber-50 border border-amber-200 text-amber-700 text-[9px]">DEMO</span>
                   </div>
                 </div>
                 <div className="flex gap-2">
