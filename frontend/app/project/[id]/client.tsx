@@ -5,7 +5,6 @@ import { useWallet } from "@/lib/WalletContext";
 import { CONTRACT_ID } from "@/lib/contract";
 import TransactionSigningModal from "@/components/TransactionSigningModal";
 import TransactionSuccess from "@/components/TransactionSuccess";
-import { CONTRACT_ID } from "@/lib/contract";
 
 /* ──────────────────── Constants ──────────────────── */
 
