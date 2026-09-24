@@ -180,7 +180,7 @@ export default function StatsBar() {
           ) : null}
           <div className="flex items-center justify-between text-slate-500">
             <span className="text-[13px] tracking-wide uppercase font-semibold text-slate-500">
-              Inversores Globales
+              Participantes Globales
             </span>
             <span className="material-symbols-outlined text-amber-600 text-[20px]">group</span>
           </div>
@@ -196,7 +196,7 @@ export default function StatsBar() {
               holderCountValue
             )}
           </span>
-          <span className="font-mono text-[11px] text-amber-700 font-semibold mt-2">Cobrando Rendimientos Diarios</span>
+          <span className="font-mono text-[11px] text-amber-700 font-semibold mt-2">Registrando Ingresos Diarios</span>
           <span className="font-mono text-[10px] text-slate-500 mt-1">
             {holderMetrics?.lastIndexedAt ? `Updated ${formatLastIndexed(holderMetrics.lastIndexedAt)}` : "Updated —"}
           </span>

@@ -17,10 +17,9 @@ const projects = [
     location: "Lima, Perú",
     capacity: "150 kW",
     tokens: "15",
-    invested: "150",
+    contributed: "150",
     dividends: "8.2",
     energy: "45,200",
-    apy: "12.5%",
     progress: 68,
     tone: "lime" as const,
     projectId: 0,
@@ -30,10 +29,9 @@ const projects = [
     location: "Arequipa, Perú",
     capacity: "320 kW",
     tokens: "20",
-    invested: "200",
+    contributed: "200",
     dividends: "12.1",
     energy: "82,640",
-    apy: "14.2%",
     progress: 84,
     tone: "orange" as const,
     projectId: 1,
@@ -43,10 +41,9 @@ const projects = [
     location: "Tarapoto, Perú",
     capacity: "90 kW",
     tokens: "10",
-    invested: "100",
+    contributed: "100",
     dividends: "3.1",
     energy: "26,880",
-    apy: "11.8%",
     progress: 42,
     tone: "amber" as const,
     projectId: 2,
@@ -56,7 +53,7 @@ const projects = [
 const nav = [
   { id: "dashboard" as const, label: "Dashboard", icon: "home" },
   { id: "projects" as const, label: "Mis proyectos", icon: "battery_charging_full" },
-  { id: "claim" as const, label: "Reclamar dividendos", icon: "payments" },
+  { id: "claim" as const, label: "Reclamar ingresos", icon: "payments" },
   { id: "metrics" as const, label: "Métricas", icon: "bar_chart" },
   { id: "admin" as const, label: "Admin", icon: "settings" },
 ];
@@ -308,12 +305,9 @@ function ProjectCard({
             </div>
           </div>
           <div>
-            <div className="text-[11px] text-slate-500">APY estimado</div>
+            <div className="text-[11px] text-slate-500">Energía generada</div>
             <div className="mt-1 font-mono text-sm text-emerald-600">
-              {project.apy}
-              <sup className="ml-1 text-[10px] text-slate-400" title="Proyección PPA, no garantizada">
-                *Estimado
-              </sup>
+              {project.energy} kWh
             </div>
           </div>
         </div>
@@ -381,7 +375,7 @@ function DashboardView({
     if (!connected || !address) return;
     setClaiming(true);
     try {
-      // contract: claim_revenue(investor: Address, project_id: u64) — IDs start at 1
+      // contract: claim_revenue(address: Address, project_id: u64) — IDs start at 1
       await signAndSend(CONTRACT_ID, "claim_revenue", [address, 1]);
     } catch (e) {
       console.error("Claim failed:", e);
@@ -526,7 +520,7 @@ function DashboardView({
 
   const dividendDisplay = connected && realClaimable != null ? `${realClaimable} XLM` : "23.4 XLM";
   const dividendIsDemo = !connected || realClaimable == null;
-  const investmentDisplay = "450 XLM";
+  const participationDisplay = "450 XLM";
   const tokensDisplay = "45";
 
   return (
@@ -534,10 +528,10 @@ function DashboardView({
       <div className="flex items-end justify-between">
         <div>
           <p className="mb-2 text-xs font-medium uppercase tracking-[.18em] text-emerald-600">
-            Resumen de inversión
+            Resumen de participación
           </p>
           <h1 className="text-3xl font-bold tracking-tight text-slate-900 font-display">
-            Buenos días, inversor
+            Buenos días, participante
           </h1>
           <p className="mt-2 text-sm text-slate-500">
             Tu portafolio está generando energía limpia hoy.
@@ -557,14 +551,13 @@ function DashboardView({
       <div className="grid gap-4 md:grid-cols-3">
         <StatCard
           icon="payments"
-          label="Mi inversión"
-          value={investmentDisplay}
-          change="+12.5% ↑"
+          label="Mi participación"
+          value={participationDisplay}
           demo={dividendIsDemo}
         />
         <StatCard
           icon="bolt"
-          label="Dividendos pendientes"
+          label="Ingresos pendientes"
           value={isPortfolioLoading ? "…" : dividendDisplay}
           action="Reclamar todo"
           onAction={handleClaimAll}
@@ -632,7 +625,7 @@ function DashboardView({
                 Mis proyectos
               </h2>
               <p className="mt-1 text-xs text-slate-500">
-                Rendimiento de tus activos
+                Ingresos de tus activos
               </p>
             </div>
             <button className="text-slate-400 hover:text-slate-600">
@@ -647,8 +640,8 @@ function DashboardView({
                 <tr>
                   <th className="pb-3 font-medium">Proyecto</th>
                   <th className="pb-3 font-medium">Tokens</th>
-                  <th className="pb-3 font-medium">Inversión</th>
-                  <th className="pb-3 font-medium">Dividendos</th>
+                  <th className="pb-3 font-medium">Participación</th>
+                  <th className="pb-3 font-medium">Ingresos</th>
                   <th className="pb-3 font-medium">Estado</th>
                 </tr>
               </thead>
@@ -665,7 +658,7 @@ function DashboardView({
                       {p.tokens}
                     </td>
                     <td className="py-4 font-mono text-slate-600">
-                      {p.invested} XLM
+                      {p.contributed} XLM
                     </td>
                     <td className="py-4 font-mono text-emerald-600">
                       {p.dividends} XLM {dividendIsDemo && <span className="ml-1 px-1 py-0.5 rounded bg-amber-50 border border-amber-200 text-amber-700 text-[9px]">DEMO</span>}
@@ -813,7 +806,7 @@ function ClaimView({
     if (!connected || !address) return;
     setClaiming(true);
     try {
-      // contract: claim_revenue(investor: Address, project_id: u64) — demo uses 1
+      // contract: claim_revenue(address: Address, project_id: u64) — demo uses 1
       const { txHash } = await signAndSend(CONTRACT_ID, "claim_revenue", [address, 1]);
       setLastTxHash(txHash);
     } catch (e) {
@@ -850,10 +843,10 @@ function ClaimView({
           Distribución de ingresos
         </p>
         <h1 className="text-3xl font-bold text-slate-900 font-display">
-          Reclamar dividendos
+          Reclamar ingresos
         </h1>
         <p className="mt-2 text-sm text-slate-500">
-          Tus recompensas están listas para volver a tu wallet.
+          Tus ingresos registrados están listos para volver a tu wallet.
         </p>
       </div>
 
@@ -870,7 +863,7 @@ function ClaimView({
           <span className="text-xl text-orange-600">XLM</span>
         </div>
         {!connected && (
-          <p className="mt-2 text-xs text-amber-700">Conecta tu wallet para ver dividendos reales. Valor mostrado es simulado.</p>
+          <p className="mt-2 text-xs text-amber-700">Conecta tu wallet para ver tus ingresos reales. Valor mostrado es simulado.</p>
         )}
         <button
           onClick={handleClaimAll}
@@ -943,7 +936,7 @@ function ClaimView({
           </div>
           <PdfCertificate
             data={{
-              projectName: "NIKO SUN Dividendos",
+              projectName: "NIKO SUN Ingresos",
               location: "Red Stellar Soroban",
               capacity: "Multi-proyecto",
               tokenAmount: "45",
@@ -1105,7 +1098,7 @@ function AdminView() {
         <StatCard icon="wb_sunny" label="Tus proyectos" value="3" demo />
         <StatCard
           icon="payments"
-          label="Total invertido"
+          label="Total aportado"
           value="1,250 XLM"
           demo
         />

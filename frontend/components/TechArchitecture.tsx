@@ -7,12 +7,12 @@ const pillars = [
   {
     icon: "sensors",
     title: "Oráculos IoT Descentralizados",
-    desc: "Telemetría de inversores SMA y Huawei conectada vía API de firma múltiple directa a Stellar.",
+    desc: "Telemetría de convertidores SMA y Huawei conectada vía API de firma múltiple directa a Stellar.",
     iconColor: "text-emerald-600",
   },
   {
     icon: "smart_toy",
-    title: "Dispersión Automática de Rendimientos",
+    title: "Distribución Automática de Ingresos",
     desc: "Sin retrasos contables de 90 días. Los ingresos por venta de energía se distribuyen instantáneamente on-chain.",
     iconColor: "text-orange-600",
   },
@@ -90,7 +90,7 @@ export default function TechArchitecture() {
                   <span className="w-3 h-3 rounded-full bg-amber-400" />
                   <span className="w-3 h-3 rounded-full bg-emerald-400" />
                   <span className="ml-2 text-[12px] text-slate-800 font-semibold">
-                    solar_yield_distributor.rs
+                    niko_project/src/lib.rs
                   </span>
                 </div>
                 <span className="font-semibold text-slate-500">
@@ -111,7 +111,7 @@ export default function TechArchitecture() {
                 <div>
                   <span className="text-emerald-700 font-bold">pub fn</span>{" "}
                   <span className="text-orange-600 font-bold">
-                    distribute_energy_yield
+                    deposit_revenue
                   </span>
                   (env: Env, project_id: BytesN&lt;32&gt;) {"{"}
                 </div>
@@ -134,13 +134,13 @@ export default function TechArchitecture() {
                 </div>
                 <div className="pl-8">
                   <span className="text-amber-700 font-semibold">
-                    env.events().publish((symbol_short!("YIELD"),
+                    env.events().publish((symbol_short!("REVENUE"),
                     project_id), revenue_usdc);
                   </span>
                 </div>
                 <div className="pl-8">
                   <span className="text-emerald-700 font-semibold">
-                    Vault::batch_transfer_dividends(&amp;env, revenue_usdc);
+                    Vault::batch_transfer_revenue(&amp;env, revenue_usdc);
                   </span>
                 </div>
                 <div className="pl-4 text-slate-700">{"}"}</div>

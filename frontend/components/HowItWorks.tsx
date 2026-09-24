@@ -6,7 +6,7 @@ const steps = [
     icon: "account_balance_wallet",
     title: "Conecta tu Wallet",
     description:
-      "Utiliza Freighter, Lobstr, o cualquier billetera compatible con la red Stellar y contratos inteligentes Soroban. Sin KYC invasivo para comenzar en montos micro-inversión.",
+      "Utiliza Freighter, Lobstr, o cualquier billetera compatible con la red Stellar y contratos inteligentes Soroban. Sin KYC invasivo para comenzar con aportes pequeños.",
     tag: "SOPORTA FREIGHTER & LOBSTR",
     tagColor: "text-orange-600",
     iconBg: "bg-orange-50 border-orange-200 text-orange-600",
@@ -26,7 +26,7 @@ const steps = [
   {
     num: "03",
     icon: "payments",
-    title: "Gana Dividendos",
+    title: "Recibe tus Ingresos",
     description:
       "A medida que la energía solar se inyecta en la red eléctrica, los ingresos se liquidan automáticamente a la bóveda de Soroban y se pagan directamente a tu wallet en XLM o USDC.",
     tag: "PAGOS AUTOMATIZADOS 24H",
