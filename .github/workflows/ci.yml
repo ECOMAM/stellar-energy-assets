@@ -15,9 +15,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Toolchain fijado (el mismo del build local) para que el hash del wasm sea reproducible
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@master
         with:
+          toolchain: 1.98.1
           targets: wasm32v1-none
           components: clippy
 
@@ -30,8 +32,20 @@ jobs:
       - name: Lint (clippy)
         run: cargo clippy --locked --all-targets -- -D warnings
 
+      # soroban-sdk 28 no compila con `cargo build` a secas: exige `stellar contract build`
+      # (Stellar CLI >= 25.2). Se usa el binario oficial de la release 28.0.0.
+      - name: Install Stellar CLI 28.0.0
+        run: |
+          mkdir -p "$RUNNER_TEMP/stellar-cli"
+          curl -sSfL https://github.com/stellar/stellar-cli/releases/download/v28.0.0/stellar-cli-28.0.0-x86_64-unknown-linux-gnu.tar.gz \
+            | tar -xz -C "$RUNNER_TEMP/stellar-cli"
+          BIN="$(find "$RUNNER_TEMP/stellar-cli" -type f -name stellar | head -1)"
+          chmod +x "$BIN"
+          echo "$(dirname "$BIN")" >> "$GITHUB_PATH"
+          "$BIN" --version
+
       - name: Build release WASM
-        run: cargo build --locked --target wasm32v1-none --release
+        run: stellar contract build
 
       - name: Print WASM checksum
         run: sha256sum target/wasm32v1-none/release/niko_project.wasm
