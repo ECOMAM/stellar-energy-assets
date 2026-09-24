@@ -1,0 +1,98 @@
+name: Deploy Contract to Testnet
+
+on:
+  workflow_dispatch:
+    inputs:
+      secret_key:
+        description: 'Deployer secret key (stored as repo secret DEPLOYER_SECRET)'
+        required: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32v1-none
+
+      - name: Install Stellar CLI
+        run: cargo install --locked stellar-cli --features opt
+
+      - name: Cache Cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Build Contract
+        run: |
+          cd contracts/niko_project
+          stellar contract build
+
+      - name: Optimize WASM
+        run: |
+          soroban contract optimize --wasm contracts/niko_project/target/wasm32v1-none/release/niko_project.wasm --output niko_project_opt.wasm 2>/dev/null || \
+          cp contracts/niko_project/target/wasm32v1-none/release/niko_project.wasm niko_project_opt.wasm
+          ls -la niko_project_opt.wasm
+
+      - name: Deploy to Testnet
+        env:
+          DEPLOYER_SECRET: ${{ secrets.DEPLOYER_SECRET }}
+        run: |
+          CONTRACT_ID=$(stellar contract deploy \
+            --wasm niko_project_opt.wasm \
+            --source "$DEPLOYER_SECRET" \
+            --network testnet \
+            --alias niko-sun)
+          echo "Deployed contract: $CONTRACT_ID"
+          echo "CONTRACT_ID=$CONTRACT_ID" >> $GITHUB_ENV
+
+      - name: Initialize Contract
+        env:
+          DEPLOYER_SECRET: ${{ secrets.DEPLOYER_SECRET }}
+        run: |
+          stellar contract invoke \
+            --id ${{ env.CONTRACT_ID }} \
+            --source "$DEPLOYER_SECRET" \
+            --network testnet \
+            -- initialize
+
+      - name: Create Project #1
+        env:
+          DEPLOYER_SECRET: ${{ secrets.DEPLOYER_SECRET }}
+        run: |
+          DEPLOYER_ADDRESS=$(stellar keys address "$DEPLOYER_SECRET")
+          stellar contract invoke \
+            --id ${{ env.CONTRACT_ID }} \
+            --source "$DEPLOYER_SECRET" \
+            --network testnet \
+            -- create_project \
+            --creator "$DEPLOYER_ADDRESS" \
+            --name '"Solar Lima Miraflores"' \
+            --total_supply 100000 \
+            --price 10000000 \
+            --min_purchase 1
+
+      - name: Print Result
+        run: |
+          echo "============================================"
+          echo "CONTRACT DEPLOYED AND INITIALIZED"
+          echo "Contract ID: ${{ env.CONTRACT_ID }}"
+          echo "============================================"
+          echo ""
+          echo "Update frontend/app/project/[id]/page.tsx"
+          echo "with the new contract ID."
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: deployed-contract
+          path: |
+            niko_project_opt.wasm
+          retention-days: 30

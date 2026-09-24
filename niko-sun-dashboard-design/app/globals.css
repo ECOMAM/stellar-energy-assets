@@ -1,0 +1,45 @@
+@import 'tailwindcss';
+@import 'tw-animate-css';
+@import 'shadcn/tailwind.css';
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --radius-sm: calc(var(--radius) * .6);
+  --radius-md: calc(var(--radius) * .8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+}
+
+:root { color-scheme: dark; --background: oklch(.145 0 0); --foreground: oklch(.985 0 0); --card: oklch(.205 0 0); --card-foreground: oklch(.985 0 0); --popover: oklch(.205 0 0); --popover-foreground: oklch(.985 0 0); --primary: oklch(.78 .16 160); --primary-foreground: oklch(.15 .03 180); --secondary: oklch(.25 .03 220); --secondary-foreground: oklch(.98 0 0); --muted: oklch(.25 .03 220); --muted-foreground: oklch(.7 .03 230); --accent: oklch(.25 .03 220); --accent-foreground: oklch(.98 0 0); --destructive: oklch(.65 .2 25); --border: oklch(1 0 0 / 11%); --input: oklch(1 0 0 / 14%); --ring: oklch(.78 .16 160); --radius: .75rem; }
+
+@layer base { * { @apply border-border outline-ring/50; } body { @apply bg-background text-foreground; } }
+
+.panel { border: 1px solid rgb(51 65 85 / .72); border-radius: .75rem; background: rgb(20 32 51 / .72); box-shadow: 0 12px 30px rgb(2 6 23 / .12); }
+.field { width: 100%; border: 1px solid rgb(51 65 85); border-radius: .5rem; background: rgb(15 23 42 / .8); padding: .65rem .75rem; color: white; outline: none; }
+.field:focus { border-color: rgb(52 211 153 / .7); box-shadow: 0 0 0 3px rgb(52 211 153 / .1); }
+button { cursor: pointer; }
+::selection { background: rgb(52 211 153 / .28); }
+
+@media (max-width: 767px) { .panel { border-radius: .65rem; } }
+
+@keyframes pulseGlow { 0%, 100% { box-shadow: 0 0 0 0 rgb(251 146 60 / .18); } 50% { box-shadow: 0 0 0 8px rgb(251 146 60 / 0); } }
+
