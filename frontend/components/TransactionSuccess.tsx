@@ -13,7 +13,6 @@ interface TransactionSuccessProps {
   txHash: string;
   tokenCount: number;
   costXlm: number;
-  costUsd: number;
   projectName: string;
   projectFlag: string;
   assetId: string;
@@ -44,7 +43,6 @@ export default function TransactionSuccess({
   txHash,
   tokenCount,
   costXlm,
-  costUsd,
   projectName,
   projectFlag,
   assetId,
@@ -317,9 +315,8 @@ export default function TransactionSuccess({
                   </span>
                 </div>
                 <p className="text-[13px] text-slate-500 mb-4">
-                  Pagaste {costXlm.toLocaleString("en-US")} XLM (~$
-                  {costUsd.toLocaleString("en-US", { minimumFractionDigits: 2 })} USD ref.)
-                  al contrato Soroban del proyecto.
+                  Pagaste {costXlm.toLocaleString("en-US")} XLM al contrato
+                  Soroban del proyecto.
                 </p>
                 <div className="p-3 bg-white rounded-lg flex items-center gap-3 border border-slate-100">
                   <span className="material-symbols-outlined text-orange-600 text-2xl">

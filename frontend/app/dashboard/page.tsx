@@ -818,7 +818,7 @@ function ClaimView({
   const [claiming, setClaiming] = useState(false);
   const [last, setLast] = useState<{ hashes: string[]; claimed: bigint; projectName: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const { projects, onChain } = useDisplayProjects();
+  const { projects, onChain, loading } = useDisplayProjects();
   const ids = useMemo(() => (onChain ?? []).map((p) => p.id), [onChain]);
   const { positions, reload } = usePortfolio(connected ? address : null, ids);
 
@@ -903,7 +903,11 @@ function ClaimView({
               <div>
                 <div className="font-medium text-slate-700">{p.name}</div>
                 <div className="mt-1 text-xs text-slate-500">
-                  {p.isDemo ? "Sin conexión a testnet" : `${p.energyKwh.toLocaleString("en-US")} kWh reportados · id ${p.id}`}{" "}
+                  {loading
+                    ? "Cargando datos on-chain…"
+                    : p.isDemo
+                      ? "Sin conexión a testnet"
+                      : `${p.energyKwh.toLocaleString("en-US")} kWh reportados · id ${p.id}`}{" "}
                   {!isReal && <DemoBadge className="ml-1" />}
                 </div>
               </div>

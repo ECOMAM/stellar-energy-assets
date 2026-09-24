@@ -175,7 +175,7 @@ export default function FeaturedProjects() {
               <div className="space-y-2">
                 <div className="flex justify-between items-center font-mono text-[12px]">
                   <span className="text-slate-600 font-medium">
-                    Financiado: {formatXlm(p.minted * p.price, { maxDecimals: 0 })} / {formatXlm(p.totalSupply * p.price, { maxDecimals: 0 })} XLM
+                    Adquirido: {formatXlm(p.minted * p.price, { maxDecimals: 0 })} / {formatXlm(p.totalSupply * p.price, { maxDecimals: 0 })} XLM
                   </span>
                   <span className="text-emerald-700 font-bold" title={p.isReal ? "On-chain: minted / total_supply" : "Demo — datos simulados"}>
                     {p.percent}%

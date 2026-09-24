@@ -27,7 +27,6 @@ interface SigningModalProps {
   assetId: string;
   tokenCount: number;
   costXlm: number;
-  costUsd: number;
   capacityWp: number;
   /* ── Wallet data ── */
   walletAddress: string;
@@ -129,7 +128,6 @@ export default function TransactionSigningModal({
   assetId,
   tokenCount,
   costXlm,
-  costUsd,
   capacityWp,
   walletAddress,
   walletBalance,
@@ -248,10 +246,6 @@ export default function TransactionSigningModal({
                 </span>
                 <span className="font-mono text-[16px] font-bold text-orange-700 block mt-0.5">
                   {costXlm.toLocaleString("en-US")} XLM
-                </span>
-                <span className="text-[11px] text-slate-500">
-                  ~${costUsd.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}{" "}
-                  USD aprox.
                 </span>
               </div>
               <div className="p-3 bg-white rounded-lg border border-slate-200">

@@ -25,12 +25,9 @@ import {
 } from "./contract";
 import { encodeContractArgs, SIMULATION_SOURCE } from "./soroban";
 
-const XLM_TO_USD = 0.13;
-
 interface WalletState {
   address: string | null;
   balance: string;
-  balanceUsd: string;
   network: string;
   connected: boolean;
   connecting: boolean;
@@ -79,7 +76,6 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   const [state, setState] = useState<WalletState>({
     address: null,
     balance: "0",
-    balanceUsd: "0.00",
     network: "",
     connected: false,
     connecting: false,
@@ -101,13 +97,11 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       );
       if (native) {
         const bal = native.balance;
-        const usd = (parseFloat(bal) * XLM_TO_USD).toFixed(2);
         setState((s) => ({
           ...s,
           balance: parseFloat(bal).toLocaleString("en-US", {
             maximumFractionDigits: 2,
           }),
-          balanceUsd: usd,
         }));
       }
     } catch (err) {
@@ -145,7 +139,6 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     setState({
       address: null,
       balance: "0",
-      balanceUsd: "0.00",
       network: "",
       connected: false,
       connecting: false,
