@@ -135,18 +135,24 @@ Funciones públicas (v2), agrupadas por rol:
 
 ### Contrato v2 (versión actual, endurecida)
 
-| Elemento | Valor |
-|---|---|
-| Contract ID | `<CONTRACT_ID_V2>` |
-| Tx de despliegue | `<TX_DEPLOY_V2>` |
-| Tx `create_project` | `<TX_CREATE_PROJECT>` |
-| Tx `purchase_tokens` | `<TX_PURCHASE>` |
-| Tx `update_energy` | `<TX_UPDATE_ENERGY>` |
-| Tx `deposit_revenue` | `<TX_DEPOSIT>` |
-| Tx `claim_revenue` | `<TX_CLAIM>` |
-| Tx `withdraw_sales` | `<TX_WITHDRAW>` |
+**Contract ID:** [`CADAAIOMITOWW6MI5YF4UNE6T5GQWY7OF6SHRJNQS4ZGGQ4UDEQXCMNM`](https://stellar.expert/explorer/testnet/contract/CADAAIOMITOWW6MI5YF4UNE6T5GQWY7OF6SHRJNQS4ZGGQ4UDEQXCMNM)
 
-Explorador: `https://stellar.expert/explorer/testnet/contract/<ID>` y `https://stellar.expert/explorer/testnet/tx/<HASH>`.
+Ciclo completo ejecutado en testnet el 2026-09-24 con `scripts/demo-cycle.sh`:
+
+| Paso | Transacción |
+|---|---|
+| Despliegue con constructor (wasm `5ef31ba2…`, commit `61b6ebe`) | [`55db825b600d…`](https://stellar.expert/explorer/testnet/tx/55db825b600da6acf3c6dbcd193f9a65dfab639671f655213dff62164efd084e) |
+| Emisor verificado (`set_issuer`) | [`6e752aead3d2…`](https://stellar.expert/explorer/testnet/tx/6e752aead3d20982c031f0710da9653a3342ce7d27df5249f6b6137cd151ccdd) |
+| Participante aprobado (`set_participant`) | [`843d1f86906d…`](https://stellar.expert/explorer/testnet/tx/843d1f86906d7eecd003f8374962c0cc906f9ada7beea2b5fa0083ddc8952baa) |
+| `create_project` | [`994c660f64e8…`](https://stellar.expert/explorer/testnet/tx/994c660f64e8700488403f747e3f638d9400cd2e9e79f2b90c635b0a90557687) |
+| `purchase_tokens` (30 participaciones, 300 XLM) | [`d4fffe34dbf7…`](https://stellar.expert/explorer/testnet/tx/d4fffe34dbf7edb289fb4f68eec0d24f2c6704440fb34ad507e20b9e473f555e) |
+| `update_energy` (+1250 kWh) | [`e81279ebb1b8…`](https://stellar.expert/explorer/testnet/tx/e81279ebb1b8d89a4f470ceb23e2ad118f2ae3a300e793224ec6d5c288ef5326) |
+| `deposit_revenue` (40 XLM) | [`f85d09ebbaf5…`](https://stellar.expert/explorer/testnet/tx/f85d09ebbaf5ca1c0454968035358a5728cc88d961806301a74ca7671b6c5a12) |
+| `claim_revenue` (30 XLM al participante 1) | [`e4b52a6d9b95…`](https://stellar.expert/explorer/testnet/tx/e4b52a6d9b95181e37530695c03a4038100b0e9216ae123f8a1c336b2074851f) |
+| `withdraw_sales` (200 XLM al emisor) | [`c4b32d21c26c…`](https://stellar.expert/explorer/testnet/tx/c4b32d21c26ca439450cebb6494e9273418589fa09c6a29459fc0b97d333f9cc) |
+| `set_paused` (compra rechazada con `Paused #5` durante la pausa) | [`e9726c60915b…`](https://stellar.expert/explorer/testnet/tx/e9726c60915b0893caf7867743add5f4b5a49314133e518a87f3b919667f5be7) |
+
+El detalle completo está en [`docs/ciclo-onchain-testnet.md`](docs/ciclo-onchain-testnet.md): todos los pasos, los efectos en Horizon que muestran el movimiento real de XLM, los costos medidos por operación y el TTL del contrato (vivo hasta ≈ 2026-10-25).
 
 ### Historial v1 (primera versión del contrato, solo contable, sin movimiento de XLM; se conserva por trazabilidad)
 
@@ -185,7 +191,7 @@ scripts/deploy.sh testnet
 Ciclo completo de demostración on-chain:
 
 ```bash
-scripts/demo-cycle.sh
+CONTRACT_ID=<id-del-contrato> LOG_FILE=docs/ciclo.md scripts/demo-cycle.sh
 ```
 
 Este script aprueba a un emisor y a los participantes, crea un proyecto, ejecuta dos compras, actualiza la producción de energía, registra un ingreso, hace los reclamos correspondientes, ejecuta un retiro y verifica el comportamiento de la pausa.
