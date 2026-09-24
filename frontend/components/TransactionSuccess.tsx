@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import PdfCertificate from "@/components/PdfCertificate";
+import { TX_EXPLORER } from "@/lib/contract";
 
 /* ──────────────────── Types ──────────────────── */
 
@@ -19,6 +20,8 @@ interface TransactionSuccessProps {
   walletAddress: string;
   capacityWp: number;
   contractId: string;
+  /** off-chain demo location of the project */
+  location?: string;
 }
 
 /* ──────────────────── Helpers ──────────────────── */
@@ -48,14 +51,14 @@ export default function TransactionSuccess({
   walletAddress,
   capacityWp,
   contractId,
+  location = "Perú (demo)",
 }: TransactionSuccessProps) {
   const [copied, setCopied] = useState(false);
   const router = useRouter();
 
   if (!open) return null;
 
-  const co2Kg = tokenCount * 0.32 * 1000; // ~0.32 ton per token per year → kg
-  const usufId = `SLN-USUF-${String(Math.floor(Math.random() * 9999)).padStart(4, "0")}`;
+  const co2Kg = tokenCount * 0.32 * 1000; // illustrative estimate, kg per year
 
   function handleCopy() {
     navigator.clipboard?.writeText(txHash).then(() => {
@@ -95,18 +98,18 @@ export default function TransactionSuccess({
               </span>
             </div>
             <span className="text-[12px] text-orange-600 font-bold uppercase tracking-wider mb-2">
-              Operación RWA Liquidada
+              Compra registrada on-chain
             </span>
             <h1 className="font-display text-[26px] font-bold text-slate-900 mb-3">
-              ¡Participación Confirmada y Liquidada con Éxito!
+              ¡Participación Confirmada!
             </h1>
             <p className="text-[14px] text-slate-600 max-w-lg leading-relaxed">
-              Has adquirido participación patrimonial directa en el{" "}
+              Registraste {tokenCount} {tokenCount === 1 ? "participación" : "participaciones"} en el proyecto demo{" "}
               <strong className="text-slate-900 font-semibold">
                 {projectFlag} {projectName}
               </strong>
-              . El smart contract en Stellar Soroban ha emitido y custodiado tu
-              título en tu billetera.
+              . El contrato Soroban recibió tus XLM y guarda tu balance on-chain
+              (no se emite un token a tu wallet).
             </p>
 
             {/* Tx hash pill */}
@@ -127,7 +130,7 @@ export default function TransactionSuccess({
               </button>
               <span className="text-slate-300">|</span>
               <a
-                href={`https://stellar.expert/testnet/tx/${txHash}`}
+                href={TX_EXPLORER(txHash)}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="text-[12px] text-emerald-600 hover:underline inline-flex items-center gap-0.5 font-semibold"
@@ -160,19 +163,19 @@ export default function TransactionSuccess({
                         workspace_premium
                       </span>
                       <span className="text-[11px] text-orange-600 font-bold tracking-widest uppercase">
-                        Título Digital Desmaterializado
+                        Comprobante demo · sin valor legal
                       </span>
                     </div>
                     <h3 className="font-display text-[17px] font-bold text-slate-900 tracking-tight">
-                      CERTIFICADO DE USUFRUCTO SOLAR RWA
+                      COMPROBANTE DE PARTICIPACIÓN (DEMO)
                     </h3>
                     <span className="text-[12px] text-slate-500">
-                      Ley General de Sociedades Nº 26887 &amp; D.L. 1023
+                      Stellar testnet · contrato Soroban v2
                     </span>
                   </div>
                   <div className="text-right shrink-0">
                     <span className="px-2.5 py-1 rounded bg-amber-100 text-amber-800 text-[11px] font-bold font-mono">
-                      NFT #{usufId}
+                      Tx {shortHash(txHash)}
                     </span>
                   </div>
                 </div>
@@ -186,7 +189,7 @@ export default function TransactionSuccess({
                       className="w-full h-full object-cover"
                     />
                     <div className="absolute bottom-1 left-1 bg-slate-900/80 text-white text-[9px] px-1.5 py-0.5 rounded backdrop-blur">
-                      ACTIVO REAL
+                      IMAGEN ILUSTRATIVA
                     </div>
                   </div>
                   <div className="sm:col-span-2 flex flex-col justify-center">
@@ -200,7 +203,7 @@ export default function TransactionSuccess({
                       <span className="material-symbols-outlined text-sm">
                         location_on
                       </span>
-                      Lima, Perú
+                      {location}
                     </span>
                   </div>
                 </div>
@@ -209,23 +212,23 @@ export default function TransactionSuccess({
                 <div className="grid grid-cols-2 gap-y-4 gap-x-6 py-4 text-left">
                   <div>
                     <span className="block text-[11px] text-slate-500 uppercase font-semibold">
-                      Fideicomitente / Emisor
+                      Contrato
                     </span>
-                    <span className="text-[13px] text-slate-900 font-semibold">
-                      La Fiduciaria S.A. / NIKO Protocol
+                    <span className="text-[13px] text-slate-900 font-mono" title={contractId}>
+                      {shortAddr(contractId)}
                     </span>
                   </div>
                   <div>
                     <span className="block text-[11px] text-slate-500 uppercase font-semibold">
-                      Inscripción Registral
+                      Registro
                     </span>
                     <span className="text-[13px] text-slate-900 font-mono">
-                      SUNARP Nº 14829104
+                      On-chain (Soroban)
                     </span>
                   </div>
                   <div>
                     <span className="block text-[11px] text-slate-500 uppercase font-semibold">
-                      Potencia Adjudicada
+                      Capacidad equivalente (ilustrativa)
                     </span>
                     <span className="text-[13px] text-emerald-600 font-mono font-bold">
                       {capacityWp.toFixed(1)} Wp
@@ -233,15 +236,15 @@ export default function TransactionSuccess({
                   </div>
                   <div>
                     <span className="block text-[11px] text-slate-500 uppercase font-semibold">
-                      Vigencia del Usufructo
+                      Monto pagado
                     </span>
                     <span className="text-[13px] text-slate-900 font-semibold">
-                      10 Años (PPA Indexado USD)
+                      {costXlm.toLocaleString("en-US")} XLM
                     </span>
                   </div>
                   <div>
                     <span className="block text-[11px] text-slate-500 uppercase font-semibold">
-                      Titular Registrado
+                      Cuenta participante
                     </span>
                     <span className="text-[13px] text-slate-900 font-mono">
                       {shortAddr(walletAddress)} (Freighter)
@@ -249,10 +252,10 @@ export default function TransactionSuccess({
                   </div>
                   <div>
                     <span className="block text-[11px] text-slate-500 uppercase font-semibold">
-                      Estándar Soroban
+                      Tipo de registro
                     </span>
                     <span className="text-[13px] text-slate-900 font-mono">
-                      SEP-41 Non-Fungible RWA
+                      Balance en el contrato (no transferible)
                     </span>
                   </div>
                 </div>
@@ -267,10 +270,10 @@ export default function TransactionSuccess({
                     </div>
                     <div className="flex flex-col">
                       <span className="text-[12px] text-amber-800 font-bold leading-tight">
-                        PATRIMONIO AUTÓNOMO
+                        DEMO TESTNET
                       </span>
                       <span className="text-[12px] text-slate-500">
-                        Inembargable y auditado trimestralmente
+                        Sin valor legal ni financiero
                       </span>
                     </div>
                   </div>
@@ -310,13 +313,13 @@ export default function TransactionSuccess({
                     {tokenCount}
                   </span>
                   <span className="font-display text-[16px] font-bold text-emerald-600">
-                    {assetId} Tokens
+                    {assetId} · participaciones
                   </span>
                 </div>
                 <p className="text-[13px] text-slate-500 mb-4">
-                  Equivalentes a ${costUsd.toLocaleString("en-US", { minimumFractionDigits: 2 })}{" "}
-                  USDC depositados en tu contrato fideicomitido de usufructo
-                  energético.
+                  Pagaste {costXlm.toLocaleString("en-US")} XLM (~$
+                  {costUsd.toLocaleString("en-US", { minimumFractionDigits: 2 })} USD ref.)
+                  al contrato Soroban del proyecto.
                 </p>
                 <div className="p-3 bg-white rounded-lg flex items-center gap-3 border border-slate-100">
                   <span className="material-symbols-outlined text-orange-600 text-2xl">
@@ -324,7 +327,7 @@ export default function TransactionSuccess({
                   </span>
                   <div className="flex flex-col">
                     <span className="text-[11px] text-slate-500 uppercase">
-                      Potencia Solar Respaldada
+                      Capacidad equivalente (ilustrativa)
                     </span>
                     <span className="text-[14px] text-slate-900 font-bold font-mono">
                       {capacityWp.toFixed(1)} Wp
@@ -339,23 +342,23 @@ export default function TransactionSuccess({
                   <span className="material-symbols-outlined text-emerald-600 text-xl">
                     schedule
                   </span>
-                  Próxima Distribución de Ingresos
+                  Cuándo hay ingresos
                 </h4>
                 <div className="flex items-center justify-between p-3.5 rounded-lg bg-slate-50 mb-3 border border-slate-100">
                   <div className="flex flex-col">
                     <span className="text-[12px] text-slate-500">
-                      Corte Diario PPA:
+                      Depósito del emisor:
                     </span>
                     <span className="text-[14px] text-slate-900 font-semibold">
-                      Hoy 00:00 UTC
+                      deposit_revenue
                     </span>
                   </div>
                   <div className="text-right">
                     <span className="text-[14px] text-orange-600 font-mono font-bold">
-                      ~24h
+                      claim_revenue
                     </span>
                     <span className="block text-[10px] text-slate-400">
-                      Ejecución Atómica
+                      Reclamo desde el Dashboard
                     </span>
                   </div>
                 </div>
@@ -367,11 +370,11 @@ export default function TransactionSuccess({
                   </span>
                   <div className="flex flex-col">
                     <span className="text-[14px] text-slate-900 font-semibold">
-                      {co2Kg.toLocaleString("en-US")} kg CO₂e / año mitigados
+                      ~{co2Kg.toLocaleString("en-US")} kg CO₂e / año (estimación)
                     </span>
                     <p className="text-[12px] text-slate-500">
-                      Créditos de Energía Renovable (I-REC) emitidos y
-                      rastreados automáticamente por oráculo IoT en Stellar.
+                      Estimación ilustrativa de la demo; no se emiten
+                      certificados de energía renovable.
                     </p>
                   </div>
                 </div>
@@ -425,7 +428,7 @@ export default function TransactionSuccess({
                 data={{
                   projectName,
                   location: "Red Stellar Soroban",
-                  capacity: `${capacityWp} kWp`,
+                  capacity: `${capacityWp.toFixed(1)} Wp (ilustrativo)`,
                   tokenAmount: String(tokenCount),
                   pricePaid: `${costXlm} XLM`,
                   walletAddress,
@@ -452,11 +455,10 @@ export default function TransactionSuccess({
                 gavel
               </span>
               <span>
-                Tus derechos de usufructo están salvaguardados por el Fideicomiso
-                Mercantil Irrevocable (SUNARP Nº 14829104).
+                Demo en Stellar testnet con activos y datos simulados. Sin fondos reales. No es una oferta de inversión ni promete retornos.
               </span>
             </div>
-            <span>Dispersión automatizada en Stellar Soroban.</span>
+            <span>Reparto proporcional on-chain vía claim_revenue.</span>
           </div>
         </div>
       </div>

@@ -1,107 +1,35 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { useWallet } from "@/lib/WalletContext";
-import { CONTRACT_ID, EXPLORER_URL } from "@/lib/contract";
+import { EXPLORER_URL } from "@/lib/contract";
 import { useHolderMetrics } from "@/hooks/useHolderMetrics";
+import { useOnChainProjects } from "@/hooks/useOnChainProjects";
 import { formatHolderCount, formatLastIndexed } from "@/lib/holderIndexer";
+import { stroopsToXlmNumber } from "@/lib/units";
 
-type ChainMetrics = {
-  totalTokenizedXlm: string | null;
-  projectsCount: number | null;
-  energyKwh: string | null;
-};
+const compact = new Intl.NumberFormat("en-US", { notation: "compact", maximumFractionDigits: 1 });
 
 export default function StatsBar() {
-  const { readContract } = useWallet();
   const { metrics: holderMetrics, loading: holderLoading } = useHolderMetrics();
-  const [chain, setChain] = useState<ChainMetrics>({
-    totalTokenizedXlm: null,
-    projectsCount: null,
-    energyKwh: null,
-  });
-  const [isLoading, setIsLoading] = useState(true);
-  const isDemoChain = chain.totalTokenizedXlm == null && chain.projectsCount == null;
+  const { projects, loading: isLoading } = useOnChainProjects();
 
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const sdk = await import("@stellar/stellar-sdk");
-        const decode = (val: unknown) => {
-          try {
-            return (sdk as unknown as { scValToNative: (v: unknown) => unknown }).scValToNative(val as never);
-          } catch {
-            return val;
-          }
-        };
-        let nextId = 1;
-        try {
-          const rawNext = await readContract(CONTRACT_ID, "next_project_id", []);
-          const d = decode(rawNext);
-          if (typeof d === "bigint") nextId = Number(d);
-          else if (typeof d === "number") nextId = d;
-          else nextId = Number(d as string);
-        } catch {
-          nextId = 4;
-        }
-        const ids = [];
-        for (let i = 1; i < nextId; i++) ids.push(i);
-        const fetchIds = ids.length > 0 ? ids.slice(0, 12) : [1, 2, 3];
-        let totalValue = BigInt(0);
-        let totalEnergy = BigInt(0);
-        let successCount = 0;
-        for (const id of fetchIds) {
-          try {
-            const raw = await readContract(CONTRACT_ID, "get_project", [id]);
-            const p = decode(raw) as Record<string, unknown>;
-            const totalSupply = BigInt((p.total_supply ?? p.totalSupply ?? 0) as string | number | bigint);
-            const price = BigInt((p.price ?? 0) as string | number | bigint);
-            const energy = BigInt((p.total_energy_kwh ?? p.totalEnergyKwh ?? 0) as string | number | bigint);
-            totalValue += totalSupply * price;
-            totalEnergy += energy;
-            successCount++;
-          } catch {
-            // keep mock for this id
-          }
-        }
-        try {
-          await readContract(CONTRACT_ID, "get_total_sales", []);
-        } catch {
-          // ignore
-        }
-        if (cancelled) return;
-        const xlmTotal = Number(totalValue) / 1_000_000;
-        const tokenizedStr =
-          xlmTotal >= 1_000_000
-            ? `$${(xlmTotal * 0.13 / 1_000_000).toFixed(1)}M`
-            : xlmTotal >= 1000
-              ? `${(xlmTotal / 1000).toFixed(1)}k XLM`
-              : xlmTotal > 0
-                ? `${xlmTotal.toLocaleString("en-US", { maximumFractionDigits: 0 })} XLM`
-                : null;
-        const energyStr = totalEnergy > BigInt(0) ? Number(totalEnergy).toLocaleString("en-US") : null;
-        setChain({
-          totalTokenizedXlm: tokenizedStr,
-          projectsCount: successCount > 0 ? (nextId > 1 ? nextId - 1 : successCount) : null,
-          energyKwh: energyStr,
-        });
-      } catch (e) {
-        console.warn("StatsBar chain fetch failed", e);
-      } finally {
-        if (!cancelled) setIsLoading(false);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [readContract]);
+  // supply x price of every project, in XLM (price is u128 stroops on-chain).
+  const totalValueStroops = projects ? projects.reduce((acc, p) => acc + p.totalSupply * p.price, BigInt(0)) : null;
+  const totalEnergy = projects ? projects.reduce((acc, p) => acc + p.totalEnergyKwh, BigInt(0)) : null;
+  const chain = {
+    totalTokenizedXlm:
+      totalValueStroops != null && totalValueStroops > BigInt(0)
+        ? `${compact.format(stroopsToXlmNumber(totalValueStroops))} XLM`
+        : null,
+    projectsCount: projects ? projects.length : null,
+    energyKwh: totalEnergy != null ? totalEnergy.toLocaleString("en-US") : null,
+  };
+  const isDemoChain = chain.totalTokenizedXlm == null && chain.projectsCount == null;
 
   const staticCards = [
     {
       label: "Total Tokenizado",
-      value: chain.totalTokenizedXlm ?? "$2.4M+",
-      sub: chain.totalTokenizedXlm != null ? "Testnet · On-chain (supply×price)" : "Testnet · Represented",
+      value: chain.totalTokenizedXlm ?? "15.5K XLM",
+      sub: chain.totalTokenizedXlm != null ? "Testnet · On-chain (supply × precio)" : "Testnet · valor demo",
       subColor: "text-emerald-700",
       icon: "monetization_on",
       iconColor: "text-emerald-600",
@@ -109,8 +37,8 @@ export default function StatsBar() {
     },
     {
       label: "Proyectos Activos",
-      value: chain.projectsCount != null ? String(chain.projectsCount) : "12",
-      sub: "Auditados y Conectados a Red",
+      value: chain.projectsCount != null ? String(chain.projectsCount) : "3",
+      sub: "Registrados on-chain por emisores verificados",
       subColor: "text-orange-600",
       icon: "solar_power",
       iconColor: "text-orange-500",
@@ -120,9 +48,9 @@ export default function StatsBar() {
 
   const energyCard = {
     label: "Energía Limpia",
-    value: chain.energyKwh ?? "1.2M",
+    value: chain.energyKwh ?? "3,990",
     unit: "kWh",
-    sub: "890 Toneladas CO₂ Evitadas",
+    sub: "Reportada por el emisor y anclada on-chain",
     subColor: "text-emerald-700",
     icon: "eco",
     iconColor: "text-emerald-600",
@@ -196,7 +124,7 @@ export default function StatsBar() {
               holderCountValue
             )}
           </span>
-          <span className="font-mono text-[11px] text-amber-700 font-semibold mt-2">Registrando Ingresos Diarios</span>
+          <span className="font-mono text-[11px] text-amber-700 font-semibold mt-2">Cuentas con participaciones (eventos purchase + get_portfolio)</span>
           <span className="font-mono text-[10px] text-slate-500 mt-1">
             {holderMetrics?.lastIndexedAt ? `Updated ${formatLastIndexed(holderMetrics.lastIndexedAt)}` : "Updated —"}
           </span>

@@ -20,7 +20,7 @@ export default function Hero() {
               <span className="font-mono text-[11px] tracking-wider text-slate-700 font-semibold uppercase">
                 Built on Stellar <span className="text-slate-400">/</span> 5s
                 settlement <span className="text-slate-400">/</span>{" "}
-                ~$0.00001/txn
+                &lt; 0.1 XLM/txn (testnet)
               </span>
             </div>
 
@@ -53,9 +53,9 @@ export default function Hero() {
 
             {/* Subheadline */}
             <p className="font-body text-[14px] leading-[22px] lg:text-[16px] lg:leading-[26px] text-slate-600 max-w-xl">
-              Tokeniza proyectos solares en Stellar. Compra fracciones de paneles
-              solares fotovoltaicos, genera energía limpia verificada por IoT y
-              reclama tu parte de los ingresos por energía on-chain instantáneamente en USDC y XLM.
+              Tokeniza proyectos solares en Stellar. Adquiere participaciones de
+              proyectos solares demo con XLM, sigue la energía que el emisor ancla
+              on-chain y reclama tu parte proporcional de los ingresos en XLM.
             </p>
 
             {/* CTAs */}
@@ -73,7 +73,7 @@ export default function Hero() {
                 <span className="material-symbols-outlined text-amber-500 text-[18px]">
                   account_balance_wallet
                 </span>
-                <span>Conectar Freighter / Lobstr</span>
+                <span>Conectar Freighter</span>
               </button>
             </div>
 
@@ -185,7 +185,7 @@ export default function Hero() {
                     </span>
                     <div className="flex flex-col">
                       <span className="text-[13px] text-slate-800 font-medium">
-                        Distribución Automática de Ingresos
+                        Depósito de ingresos (deposit_revenue)
                       </span>
                       <span className="font-mono text-[12px] text-slate-500">
                         Block #51829402 • 1.4s ago
@@ -194,7 +194,7 @@ export default function Hero() {
                   </div>
                   <div className="text-right">
                     <span className="font-mono text-[14px] text-emerald-600 font-bold">
-                      +1,420.50 USDC
+                      +40 XLM
                     </span>
                     <div className="font-mono text-[11px] text-slate-500 font-medium">
                       POOL_PERU_NORTE
@@ -231,7 +231,7 @@ export default function Hero() {
               <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between font-mono text-[12px]">
                 <div className="flex items-center gap-2 text-slate-500">
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-600" />
-                  <span>Oracle Smart Meter ID: 0x8F9...A3</span>
+                  <span>Oráculo IoT firmado: roadmap</span>
                 </div>
                 <span className="text-emerald-700 font-bold">
                   99.98% Eficiencia

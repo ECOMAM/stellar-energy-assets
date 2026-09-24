@@ -6,20 +6,20 @@ import { CONTRACT_ID, EXPLORER_URL } from "@/lib/contract";
 const pillars = [
   {
     icon: "sensors",
-    title: "Oráculos IoT Descentralizados",
-    desc: "Telemetría de convertidores SMA y Huawei conectada vía API de firma múltiple directa a Stellar.",
+    title: "Energía anclada on-chain",
+    desc: "El emisor reporta los kWh generados y los ancla en el contrato con update_energy (o junto a cada deposit_revenue). Un oráculo IoT firmado está en el roadmap; hoy no existe.",
     iconColor: "text-emerald-600",
   },
   {
     icon: "smart_toy",
-    title: "Distribución Automática de Ingresos",
-    desc: "Sin retrasos contables de 90 días. Los ingresos por venta de energía se distribuyen instantáneamente on-chain.",
+    title: "Reparto proporcional de ingresos",
+    desc: "El emisor deposita ingresos en XLM con deposit_revenue; el contrato actualiza un índice por participación y cada participante reclama su parte con claim_revenue cuando quiere.",
     iconColor: "text-orange-600",
   },
   {
     icon: "security",
-    title: "Respaldo Real de Activos (RWA)",
-    desc: "Cada token representa la titularidad sobre contratos de usufructo solar y flujo de caja con fideicomiso bancario.",
+    title: "Reglas de cumplimiento en el contrato",
+    desc: "Solo emisores verificados crean proyectos y solo participantes aprobados (KYC simulado) compran. El admin puede pausar compras y depósitos; reclamos y retiros nunca se bloquean.",
     iconColor: "text-amber-600",
   },
 ];
@@ -47,13 +47,14 @@ export default function TechArchitecture() {
               Arquitectura de Confianza Criptográfica
             </span>
             <h2 className="font-display text-[24px] leading-[32px] lg:text-[40px] lg:leading-[48px] text-slate-900 leading-tight font-bold">
-              Soroban Smart Contracts + IoT Solar Telemetry
+              Soroban Smart Contracts + energía anclada on-chain
             </h2>
             <p className="text-[14px] text-slate-600 leading-relaxed">
-              A diferencia de los bonos verdes opacos, NIKO SUN audita cada
-              kilovatio-hora generado mediante medidores inteligentes de grado
-              industrial encriptados con claves criptográficas Ed25519 nativas
-              de Stellar.
+              Cada movimiento de XLM (compras, depósitos de ingresos, reclamos y
+              retiros) y cada kWh reportado queda registrado en el contrato
+              Soroban y emite un evento verificable en Stellar testnet. Hoy los
+              kWh los reporta el emisor; la verificación con medidores firmados
+              es parte del roadmap.
             </p>
 
             {/* Pillar bullets */}
@@ -94,57 +95,47 @@ export default function TechArchitecture() {
                   </span>
                 </div>
                 <span className="font-semibold text-slate-500">
-                  DEMO • Testnet • Simulado
+                  Paráfrasis fiel del contrato
                 </span>
               </div>
 
-              {/* Code */}
+              {/* Code: reward-per-token logic of deposit_revenue / claim_revenue */}
               <div className="space-y-1 leading-relaxed bg-slate-50 p-4 rounded-lg border border-slate-200 text-[12px]">
                 <div className="text-slate-400">
-                  {"// Verificación de Irradiancia y Pago en Bloque"}
+                  {"// deposit_revenue: solo el creador del proyecto"}
                 </div>
                 <div>
-                  <span className="text-amber-600 font-bold">
-                    #[contractimpl]
-                  </span>
+                  <span className="text-emerald-700 font-bold">let</span> reward_increase = amount * PRECISION / project.minted;
+                </div>
+                <div className="text-slate-700">
+                  token.transfer(&amp;depositor, &amp;contract, &amp;amount);
+                </div>
+                <div className="text-slate-700">
+                  project.reward_per_token_stored += reward_increase;
+                </div>
+                <div className="text-slate-700">
+                  project.total_energy_kwh += energy_kwh_delta;
+                </div>
+                <div className="pt-2 text-slate-400">
+                  {"// claim_revenue: cada participante, cuando quiera"}
                 </div>
                 <div>
-                  <span className="text-emerald-700 font-bold">pub fn</span>{" "}
-                  <span className="text-orange-600 font-bold">
-                    deposit_revenue
-                  </span>
-                  (env: Env, project_id: BytesN&lt;32&gt;) {"{"}
+                  <span className="text-emerald-700 font-bold">let</span> accrued = balance * (reward_per_token_stored - paid) / PRECISION;
                 </div>
-                <div className="pl-4 text-slate-700">
-                  let kwh_oracle = OracleClient::new(&amp;env,
-                  &amp;project_id);
+                <div>
+                  <span className="text-emerald-700 font-bold">let</span> payout = accrued + pending;
                 </div>
-                <div className="pl-4 text-slate-700">
-                  let total_generated =
-                  kwh_oracle.get_verified_generation();
+                <div className="text-slate-700">
+                  reward_paid.set((project_id, holder), reward_per_token_stored);
                 </div>
-                <div className="pl-4">
-                  <span className="text-emerald-700 font-bold">if</span>{" "}
-                  <span className="text-slate-700">
-                    total_generated &gt; 0 {"{"}
-                  </span>
-                </div>
-                <div className="pl-8 text-slate-700">
-                  let revenue_usdc = total_generated * PPA_TARIFF_RATE;
-                </div>
-                <div className="pl-8">
+                <div>
                   <span className="text-amber-700 font-semibold">
-                    env.events().publish((symbol_short!("REVENUE"),
-                    project_id), revenue_usdc);
+                    token.transfer(&amp;contract, &amp;holder, &amp;payout);
                   </span>
                 </div>
-                <div className="pl-8">
-                  <span className="text-emerald-700 font-semibold">
-                    Vault::batch_transfer_revenue(&amp;env, revenue_usdc);
-                  </span>
+                <div className="pt-2 text-slate-400">
+                  {"// aritmética con checked_* (Overflow = error #13); PRECISION = 1e18"}
                 </div>
-                <div className="pl-4 text-slate-700">{"}"}</div>
-                <div>{"}"}</div>
               </div>
 
               {/* Contract badge — real testnet ID */}

@@ -1,157 +1,75 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { useWallet } from "@/lib/WalletContext";
-import { CONTRACT_ID } from "@/lib/contract";
+import { getProjectMeta, META_PROJECT_IDS } from "@/lib/projectMeta";
+import { soldPercent } from "@/lib/projects";
+import { formatXlm } from "@/lib/units";
+import { useOnChainProjects } from "@/hooks/useOnChainProjects";
 
-const fallbackProjects = [
-  {
-    id: 1,
-    name: "Solar Lima Norte",
-    location: "Lima, Perú",
-    flag: "🇵🇪",
-    asset: "SUN-LIMA",
-    description:
-      "Planta fotovoltaica en techo industrial con contrato PPA privado a 10 años firmado con distribuidora local.",
-    capacity: "150 kWp",
-    price: "10 XLM",
-    funded: 85000,
-    total: 100000,
-    percent: 85,
-    image:
-      "https://images.unsplash.com/photo-1509391366360-2e959784a276?w=600&h=400&fit=crop",
-  },
-  {
-    id: 2,
-    name: "Solar Arequipa Desierto",
-    location: "Arequipa, Perú",
-    flag: "🇵🇪",
-    asset: "SUN-AQP",
-    description:
-      "Parque solar terrestre en zona de máxima irradiancia global con seguidores de eje simple y conexión a subestación.",
-    capacity: "320 kWp",
-    price: "15 XLM",
-    funded: 124000,
-    total: 200000,
-    percent: 62,
-    image:
-      "https://images.unsplash.com/photo-1508514177221-188b1cf16e9d?w=600&h=400&fit=crop",
-  },
-  {
-    id: 3,
-    name: "Valle Sagrado Solar",
-    location: "Cusco, Perú",
-    flag: "🇵🇪",
-    asset: "SUN-CUSCO",
-    description:
-      "Microred comunitaria y eco-resort con respaldo de baterías LFP y tarifa fija indexada a la inflación energética.",
-    capacity: "80 kWp",
-    price: "5 XLM",
-    funded: 75200,
-    total: 80000,
-    percent: 94,
-    image:
-      "https://images.unsplash.com/photo-1508514177221-188b1cf16e9d?w=600&h=400&fit=crop",
-  },
-];
-
-type ChainProject = {
-  price: string;
-  funded: number;
-  total: number;
+type CardProject = {
+  id: number;
+  name: string;
+  location: string;
+  flag: string;
+  asset: string;
+  description: string;
+  capacity: string;
+  image: string;
+  /** stroops per participation */
+  price: bigint;
+  minted: bigint;
+  totalSupply: bigint;
   percent: number;
+  /** false = fallback values (chain unreachable), labelled DEMO */
   isReal: boolean;
 };
 
-function formatXLM(n: number) {
-  return n.toLocaleString("en-US");
+/** Labelled DEMO fallback, keyed by the same ids as the on-chain projects. */
+function fallbackProjects(): CardProject[] {
+  return META_PROJECT_IDS.map((id) => {
+    const meta = getProjectMeta(id);
+    const f = meta.fallback;
+    return {
+      id,
+      name: f.name,
+      location: meta.location,
+      flag: meta.flag,
+      asset: meta.asset,
+      description: meta.description,
+      capacity: meta.capacity,
+      image: meta.image,
+      price: f.price,
+      minted: f.minted,
+      totalSupply: f.totalSupply,
+      percent: soldPercent(f),
+      isReal: false,
+    };
+  });
 }
 
 export default function FeaturedProjects() {
-  const { readContract } = useWallet();
-  const [chainData, setChainData] = useState<Record<number, ChainProject> | null>(null);
-  const [realCount, setRealCount] = useState<number | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const { projects: chainProjects, loading: isLoading } = useOnChainProjects();
 
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const sdk = await import("@stellar/stellar-sdk");
-        const decode = (val: unknown) => {
-          try {
-            return (sdk as unknown as { scValToNative: (v: unknown) => unknown }).scValToNative(val as never);
-          } catch {
-            return val;
-          }
+  const projects: CardProject[] = chainProjects
+    ? chainProjects.slice(0, 3).map((p) => {
+        const meta = getProjectMeta(p.id);
+        return {
+          id: p.id,
+          name: p.name || meta.fallback.name,
+          location: meta.location,
+          flag: meta.flag,
+          asset: meta.asset,
+          description: meta.description,
+          capacity: meta.capacity,
+          image: meta.image,
+          price: p.price,
+          minted: p.minted,
+          totalSupply: p.totalSupply,
+          percent: soldPercent(p),
+          isReal: true,
         };
-        let nextId: number | null = null;
-        try {
-          const rawNext = await readContract(CONTRACT_ID, "next_project_id", []);
-          const d = decode(rawNext);
-          if (typeof d === "bigint") nextId = Number(d);
-          else if (typeof d === "number") nextId = d;
-          else nextId = Number(d as string);
-        } catch {
-          nextId = null;
-        }
-        if (!cancelled && nextId != null) setRealCount(nextId - 1);
-
-        const ids = [1, 2, 3];
-        const results: Record<number, ChainProject> = {};
-        for (const id of ids) {
-          try {
-            const raw = await readContract(CONTRACT_ID, "get_project", [id]);
-            const p = decode(raw) as Record<string, unknown>;
-            const totalSupply = BigInt((p.total_supply ?? p.totalSupply ?? 0) as string | number | bigint);
-            const minted = BigInt((p.minted ?? 0) as string | number | bigint);
-            const price = BigInt((p.price ?? 0) as string | number | bigint);
-            const priceXlm = `${Number(price) / 1_000_000} XLM`;
-            // funded/total in XLM: minted*price /1e6
-            const funded = Number((minted * price) / BigInt(1_000_000));
-            const total = Number((totalSupply * price) / BigInt(1_000_000));
-            const percent = totalSupply > BigInt(0) ? Number((minted * BigInt(100)) / totalSupply) : 0;
-            results[id] = { price: priceXlm, funded, total, percent, isReal: true };
-          } catch {
-            // keep fallback, mark as not real
-            const fallback = fallbackProjects.find((f) => f.id === id);
-            if (fallback) {
-              results[id] = {
-                price: fallback.price,
-                funded: fallback.funded,
-                total: fallback.total,
-                percent: fallback.percent,
-                isReal: false,
-              };
-            }
-          }
-        }
-        if (!cancelled) setChainData(results);
-      } catch (e) {
-        console.warn("FeaturedProjects chain fetch failed", e);
-      } finally {
-        if (!cancelled) setIsLoading(false);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [readContract]);
-
-  const projects = fallbackProjects.map((p) => {
-    const chain = chainData?.[p.id];
-    if (chain) {
-      return {
-        ...p,
-        price: chain.price,
-        funded: chain.funded,
-        total: chain.total,
-        percent: chain.percent,
-        isReal: chain.isReal,
-      };
-    }
-    return { ...p, isReal: false };
-  });
+      })
+    : fallbackProjects();
+  const realCount = chainProjects ? chainProjects.length : null;
 
   return (
     <section
@@ -163,7 +81,7 @@ export default function FeaturedProjects() {
         <div>
           <div className="flex items-center gap-2 text-emerald-700 font-mono text-[11px] mb-2 uppercase tracking-wider font-semibold">
             <span className="w-2 h-2 rounded-full bg-emerald-600" />
-            <span>Emisión Activa de Tokens</span>
+            <span>Emisión Activa de Participaciones · Testnet</span>
           </div>
           <h2 className="font-display text-[24px] leading-[32px] lg:text-[40px] lg:leading-[48px] text-slate-900 font-bold">
             Proyectos Solares Destacados
@@ -171,13 +89,13 @@ export default function FeaturedProjects() {
         </div>
         <div className="flex items-center gap-2">
           <button className="px-5 py-2 rounded-lg bg-emerald-600 text-white text-[13px] font-semibold shadow-sm hover:bg-emerald-700 transition-colors">
-            Todos ({realCount != null ? realCount : 12})
+            Todos ({realCount ?? projects.length})
           </button>
           <button className="px-5 py-2 rounded-lg bg-white border border-slate-200 text-slate-600 text-[13px] hover:text-slate-900 hover:border-slate-300 font-medium transition-colors">
-            Perú ({realCount != null ? Math.min(realCount, 8) : 8})
+            Perú ({realCount ?? projects.length})
           </button>
           <button className="px-5 py-2 rounded-lg bg-white border border-slate-200 text-slate-600 text-[13px] hover:text-slate-900 hover:border-slate-300 font-medium transition-colors">
-            Chile ({realCount != null ? Math.max(0, realCount - 8) : 4})
+            Chile (0)
           </button>
         </div>
       </div>
@@ -200,21 +118,21 @@ export default function FeaturedProjects() {
               <img
                 className="w-full h-full object-cover"
                 src={p.image}
-                alt={`Solar panels at ${p.name}`}
+                alt={`Imagen ilustrativa de ${p.name}`}
               />
               <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent" />
 
               {/* Price pill */}
               <div className="absolute top-4 right-4 px-4 py-1 rounded-full bg-white/95 border border-emerald-200 shadow-md flex items-center gap-2">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-600 animate-ping" />
-                <span className="font-mono text-[12px] font-bold text-emerald-700" title="Precio por token">
-                  {p.price} / token
+                <span className="font-mono text-[12px] font-bold text-emerald-700" title="Precio por participación">
+                  {formatXlm(p.price)} XLM / participación
                 </span>
               </div>
 
               {/* Asset pill */}
               <div className="absolute bottom-3 left-4 px-3 py-0.5 rounded bg-white/90 backdrop-blur-sm font-mono text-[11px] text-slate-700 font-semibold border border-white/40">
-                ASSET: {p.asset}
+                ASSET: {p.asset} · #{p.id}
               </div>
             </div>
 
@@ -227,6 +145,7 @@ export default function FeaturedProjects() {
                     <span className="text-[16px]">{p.flag}</span>
                   </h3>
                 </div>
+                <p className="text-[12px] text-slate-500 mt-0.5">{p.location}</p>
                 <p className="text-[13px] text-slate-600 mt-1 leading-relaxed">
                   {p.description}
                 </p>
@@ -236,7 +155,7 @@ export default function FeaturedProjects() {
               <div className="grid grid-cols-2 gap-3 py-3 rounded-lg bg-slate-50 border border-slate-100 px-4">
                 <div>
                   <span className="font-mono text-[11px] text-slate-500 block font-medium">
-                    CAPACIDAD
+                    CAPACIDAD (DEMO)
                   </span>
                   <span className="font-mono text-[14px] text-slate-900 font-bold">
                     {p.capacity}
@@ -244,10 +163,10 @@ export default function FeaturedProjects() {
                 </div>
                 <div>
                   <span className="font-mono text-[11px] text-slate-500 block font-medium">
-                    PRECIO / TOKEN
+                    PRECIO / PARTICIPACIÓN
                   </span>
-                  <span className="font-mono text-[14px] text-orange-600 font-bold" title={p.isReal ? "Precio on-chain (stroops→XLM)" : "Precio demo — valor de fallback"}>
-                    {p.price}
+                  <span className="font-mono text-[14px] text-orange-600 font-bold" title={p.isReal ? `On-chain: ${p.price.toString()} stroops` : "Precio demo — valor de fallback"}>
+                    {formatXlm(p.price)} XLM
                   </span>
                 </div>
               </div>
@@ -256,9 +175,9 @@ export default function FeaturedProjects() {
               <div className="space-y-2">
                 <div className="flex justify-between items-center font-mono text-[12px]">
                   <span className="text-slate-600 font-medium">
-                    Financiado: {formatXLM(p.funded)} / {formatXLM(p.total)} XLM
+                    Financiado: {formatXlm(p.minted * p.price, { maxDecimals: 0 })} / {formatXlm(p.totalSupply * p.price, { maxDecimals: 0 })} XLM
                   </span>
-                  <span className="text-emerald-700 font-bold" title={p.isReal ? "On-chain: minted/total_supply" : "Demo — datos simulados"}>
+                  <span className="text-emerald-700 font-bold" title={p.isReal ? "On-chain: minted / total_supply" : "Demo — datos simulados"}>
                     {p.percent}%
                   </span>
                 </div>

@@ -73,7 +73,7 @@ export default function WalletModal({
           <button
             onClick={() => {
               alert(
-                "Lobstr Wallet — escanea el QR con tu app Lobstr para conectar via WalletConnect"
+                "Lobstr aún no está soportado en esta demo: usa Freighter en Stellar testnet."
               );
             }}
             className="w-full p-4 rounded-lg bg-slate-50 border border-slate-200 hover:bg-orange-50 hover:border-orange-300 transition-colors flex items-center justify-between text-slate-900"
@@ -83,7 +83,7 @@ export default function WalletModal({
                 account_balance_wallet
               </span>
               <span className="text-[16px] font-semibold">
-                Lobstr Mobile
+                Lobstr Mobile (próximamente)
               </span>
             </div>
             <span className="font-mono text-[11px] font-medium text-slate-500">
