@@ -1,6 +1,80 @@
 "use client";
 
+import { useEffect, useState } from "react";
+import { CONTRACT_ID, EXPLORER_URL, TX_EXPLORER } from "@/lib/contract";
+import { fetchContractEvents, parseDepositEvent, type DepositEvent } from "@/lib/events";
+import { parsePurchaseEvent, type PurchaseEvent } from "@/lib/holderIndexer";
+import { formatXlm } from "@/lib/units";
+
+/** One row of the telemetry HUD activity feed: a real on-chain deposit or purchase event. */
+type ActivityItem = {
+  kind: "deposit" | "purchase";
+  projectId: number;
+  amountXlm: string;
+  txHash: string;
+  ledger: number;
+};
+
+function shortHash(h: string) {
+  if (!h) return "—";
+  return h.slice(0, 4) + "..." + h.slice(-4);
+}
+
+function shortContract(id: string) {
+  if (!id) return "—";
+  return id.slice(0, 6) + "…" + id.slice(-4);
+}
+
 export default function Hero() {
+  /* ── Latest on-chain activity (deposit/purchase events) — real RPC data only ── */
+  const [activity, setActivity] = useState<ActivityItem[] | null>(null);
+  const [activityLoading, setActivityLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const [depositEvents, purchaseEvents] = await Promise.all([
+          fetchContractEvents("deposit", ["*"]),
+          fetchContractEvents("purchase", ["*", "*"]),
+        ]);
+        const deposits = depositEvents
+          .map(parseDepositEvent)
+          .filter((e): e is DepositEvent => e !== null);
+        const purchases = purchaseEvents
+          .map(parsePurchaseEvent)
+          .filter((e): e is PurchaseEvent => e !== null);
+        const merged: ActivityItem[] = [
+          ...deposits.map((d) => ({
+            kind: "deposit" as const,
+            projectId: Number(d.projectId),
+            amountXlm: formatXlm(d.amount),
+            txHash: d.txHash,
+            ledger: d.ledger,
+          })),
+          ...purchases.map((p) => ({
+            kind: "purchase" as const,
+            projectId: Number(p.projectId),
+            amountXlm: formatXlm(p.totalPrice),
+            txHash: p.txHash ?? "",
+            ledger: p.ledger ?? 0,
+          })),
+        ]
+          .sort((a, b) => b.ledger - a.ledger)
+          .slice(0, 2);
+        if (!cancelled) setActivity(merged);
+      } catch (e) {
+        console.warn("Hero: activity feed fetch failed", e);
+        if (!cancelled) setActivity(null);
+      } finally {
+        if (!cancelled) setActivityLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   return (
     <section className="relative w-full overflow-hidden pb-10 bg-gradient-to-b from-emerald-50/60 via-white to-surface">
       {/* Ambient glow effects */}
@@ -42,9 +116,15 @@ export default function Hero() {
               <span className="material-symbols-outlined text-emerald-600 text-[14px]">
                 lock_open
               </span>
-              <span className="font-medium text-slate-600">
-                CONTRACT: SOROBAN-RWA-SOLAR-V2
-              </span>
+              <a
+                href={EXPLORER_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="font-medium text-slate-600 hover:text-emerald-700 hover:underline"
+                title={CONTRACT_ID}
+              >
+                CONTRACT: {shortContract(CONTRACT_ID)}
+              </a>
               <span className="text-slate-300">•</span>
               <span className="font-medium text-slate-600">
                 CONSENSUS: STELLAR SCP
@@ -84,15 +164,21 @@ export default function Hero() {
 
             {/* Trust indicators */}
             <div className="pt-2 flex items-center gap-6 text-slate-500 font-mono text-[12px]">
-              <div className="flex items-center gap-2" title="Auditoría externa pendiente — prototipo revisado internamente">
+              <a
+                href="https://github.com/ECOMAM/stellar-energy-assets/blob/integracion/niko-sun/docs/security-audit.md"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-2 hover:text-emerald-700"
+                title="Ver la revisión de seguridad del contrato"
+              >
                 <span className="material-symbols-outlined text-amber-600 text-[16px]">
                   shield
                 </span>
                 <span className="font-medium text-slate-600">
-                  Auditoría pendiente
+                  Revisión de seguridad del contrato
                 </span>
                 <span className="px-1 py-0.5 rounded bg-amber-50 border border-amber-200 text-amber-700 text-[9px]">Security-reviewed prototype</span>
-              </div>
+              </a>
               <div className="flex items-center gap-2" title="Telemetría simulada en testnet">
                 <span className="material-symbols-outlined text-amber-500 text-[16px]">
                   bolt
@@ -176,66 +262,78 @@ export default function Hero() {
                 </div>
               </div>
 
-              {/* Activity stream */}
-              <div className="mt-4 space-y-2">
-                <div className="flex items-center justify-between p-3 rounded-lg bg-slate-50 border border-slate-100">
-                  <div className="flex items-center gap-3">
-                    <span className="material-symbols-outlined text-emerald-600 text-[18px]">
-                      currency_exchange
+              {/* Activity stream — real on-chain deposit/purchase events (Soroban RPC) */}
+              <div className="mt-4 space-y-2 min-h-[88px]">
+                {activityLoading ? (
+                  <div className="flex items-center gap-2 p-3 rounded-lg bg-slate-50 border border-slate-100 text-[12px] text-slate-500">
+                    <span className="material-symbols-outlined text-[16px] animate-spin">
+                      autorenew
                     </span>
-                    <div className="flex flex-col">
-                      <span className="text-[13px] text-slate-800 font-medium">
-                        Depósito de ingresos (deposit_revenue)
-                      </span>
-                      <span className="font-mono text-[12px] text-slate-500">
-                        Block #51829402 • 1.4s ago
-                      </span>
-                    </div>
+                    Cargando actividad on-chain…
                   </div>
-                  <div className="text-right">
-                    <span className="font-mono text-[14px] text-emerald-600 font-bold">
-                      +40 XLM
-                    </span>
-                    <div className="font-mono text-[11px] text-slate-500 font-medium">
-                      POOL_PERU_NORTE
-                    </div>
+                ) : activity === null ? (
+                  <div className="p-3 rounded-lg bg-slate-50 border border-slate-100 text-[12px] text-slate-500">
+                    No se pudo leer la actividad on-chain desde la RPC.
                   </div>
-                </div>
-
-                <div className="flex items-center justify-between p-3 rounded-lg bg-slate-50 border border-slate-100">
-                  <div className="flex items-center gap-3">
-                    <span className="material-symbols-outlined text-orange-500 text-[18px]">
-                      token
-                    </span>
-                    <div className="flex flex-col">
-                      <span className="text-[13px] text-slate-800 font-medium">
-                        Compra Fracción Solar
-                      </span>
-                      <span className="font-mono text-[12px] text-slate-500">
-                        GDF7...91XA via Freighter
-                      </span>
-                    </div>
+                ) : activity.length === 0 ? (
+                  <div className="p-3 rounded-lg bg-slate-50 border border-slate-100 text-[12px] text-slate-500">
+                    Sin actividad reciente en la ventana de la RPC.
                   </div>
-                  <div className="text-right">
-                    <span className="font-mono text-[14px] text-orange-600 font-bold">
-                      250 SUN-LIMA
-                    </span>
-                    <div className="font-mono text-[11px] text-slate-500 font-medium">
-                      2,500 XLM
+                ) : (
+                  activity.map((item, i) => (
+                    <div
+                      key={`${item.txHash}-${i}`}
+                      className="flex items-center justify-between p-3 rounded-lg bg-slate-50 border border-slate-100"
+                    >
+                      <div className="flex items-center gap-3">
+                        <span
+                          className={`material-symbols-outlined text-[18px] ${
+                            item.kind === "deposit" ? "text-emerald-600" : "text-orange-500"
+                          }`}
+                        >
+                          {item.kind === "deposit" ? "currency_exchange" : "token"}
+                        </span>
+                        <div className="flex flex-col">
+                          <span className="text-[13px] text-slate-800 font-medium">
+                            {item.kind === "deposit"
+                              ? "Depósito de ingresos (deposit_revenue)"
+                              : "Compra de participaciones (purchase_tokens)"}
+                          </span>
+                          <span className="font-mono text-[12px] text-slate-500">
+                            Ledger #{item.ledger} ·{" "}
+                            <a
+                              href={TX_EXPLORER(item.txHash)}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="hover:underline hover:text-emerald-700"
+                            >
+                              {shortHash(item.txHash)}
+                            </a>
+                          </span>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <span
+                          className={`font-mono text-[14px] font-bold ${
+                            item.kind === "deposit" ? "text-emerald-600" : "text-orange-600"
+                          }`}
+                        >
+                          {item.kind === "deposit" ? "+" : ""}
+                          {item.amountXlm} XLM
+                        </span>
+                        <div className="font-mono text-[11px] text-slate-500 font-medium">
+                          Proyecto #{item.projectId}
+                        </div>
+                      </div>
                     </div>
-                  </div>
-                </div>
+                  ))
+                )}
               </div>
 
               {/* Contract status */}
-              <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between font-mono text-[12px]">
-                <div className="flex items-center gap-2 text-slate-500">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-600" />
-                  <span>Oráculo IoT firmado: roadmap</span>
-                </div>
-                <span className="text-emerald-700 font-bold">
-                  99.98% Eficiencia
-                </span>
+              <div className="mt-4 pt-3 border-t border-slate-100 flex items-center gap-2 font-mono text-[12px] text-slate-500">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-600" />
+                <span>Oráculo IoT firmado: roadmap</span>
               </div>
             </div>
           </div>

@@ -27,8 +27,6 @@ import TransactionSuccess from "@/components/TransactionSuccess";
 
 /* ──────────────────── Constants ──────────────────── */
 
-const XLM_TO_USD = 0.13;
-
 /** Illustrative documents: none exists for these demo projects. */
 const LEGAL_DOCS = [
   { name: "Contrato de venta de energía", icon: "description", ext: "pdf" },
@@ -82,6 +80,9 @@ export default function ProjectDetailClient({ id }: { id?: string }) {
   /* ── On-chain project (v2 get_project(u64) + get_project_name(u64)) ── */
   const [chainProject, setChainProject] = useState<OnChainProject | null>(null);
   const [chainError, setChainError] = useState<string | null>(null);
+  /** true until the first get_project read settles (success or failure). The public RPC
+   *  can take 10-20s, so the UI must not claim "sin conexión" while still in flight. */
+  const [projectLoading, setProjectLoading] = useState(true);
   const [claimable, setClaimable] = useState<bigint | null>(null);
   const [deposits, setDeposits] = useState<DepositEvent[] | null>(null);
   const [spendable, setSpendable] = useState<bigint | null>(null);
@@ -97,10 +98,13 @@ export default function ProjectDetailClient({ id }: { id?: string }) {
       console.warn(`get_project(${projectId}) failed, using DEMO fallback`, e);
       setChainError(describeTxError(e, { method: "get_project" }));
       return null;
+    } finally {
+      setProjectLoading(false);
     }
   }, [projectId]);
 
   useEffect(() => {
+    setProjectLoading(true);
     void loadProject();
   }, [loadProject]);
 
@@ -181,7 +185,6 @@ export default function ProjectDetailClient({ id }: { id?: string }) {
   const totalPriceStroops = project.price * amount;
   const pricePerToken = stroopsToXlmNumber(project.price);
   const costXlm = stroopsToXlmNumber(totalPriceStroops);
-  const costUsd = costXlm * XLM_TO_USD;
   // Illustrative: demo capacity split evenly over the on-chain supply.
   const wpPerToken = project.totalSupply > BigInt(0) ? (meta.capacityKwp * 1000) / Number(project.totalSupply) : 0;
   const capacityAdjudicada = tokenCount * wpPerToken;
@@ -355,12 +358,18 @@ export default function ProjectDetailClient({ id }: { id?: string }) {
           <div className="mb-3 flex flex-wrap items-center gap-2">
             <span
               className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-[11px] font-semibold ${
-                isDemoChain
-                  ? "border-amber-200 bg-amber-50 text-amber-700"
-                  : "border-emerald-200 bg-emerald-50 text-emerald-700"
+                projectLoading
+                  ? "border-slate-200 bg-slate-50 text-slate-600"
+                  : isDemoChain
+                    ? "border-amber-200 bg-amber-50 text-amber-700"
+                    : "border-emerald-200 bg-emerald-50 text-emerald-700"
               }`}
             >
-              {isDemoChain ? "DEMO · sin conexión a testnet" : `On-chain · proyecto #${projectId}`}
+              {projectLoading
+                ? "Cargando datos on-chain…"
+                : isDemoChain
+                  ? "DEMO · sin conexión a testnet"
+                  : `On-chain · proyecto #${projectId}`}
             </span>
             <span className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white px-2.5 py-0.5 text-[11px] font-semibold text-slate-600">
               <span className="material-symbols-outlined text-[12px]">
@@ -456,7 +465,7 @@ export default function ProjectDetailClient({ id }: { id?: string }) {
             },
             {
               icon: "account_balance",
-              label: "Fondeo",
+              label: "Adquirido",
               value: `${fundingPct}%`,
               color: "text-emerald-600",
               bg: "bg-emerald-50",
@@ -474,7 +483,7 @@ export default function ProjectDetailClient({ id }: { id?: string }) {
               key={i}
               className="relative rounded-xl border border-slate-200 bg-white p-4 shadow-sm"
             >
-              {isDemoChain && i > 0 && (
+              {isDemoChain && !projectLoading && i > 0 && (
                 <span className="absolute top-1.5 right-1.5 px-1 py-0.5 rounded text-[8px] font-mono font-bold bg-amber-50 border border-amber-200 text-amber-700">
                   DEMO
                 </span>
@@ -655,17 +664,21 @@ export default function ProjectDetailClient({ id }: { id?: string }) {
               {/* On-chain anchor vs. simulated gauges */}
               <div
                 className={`mb-5 flex items-center gap-2 px-3 py-1.5 rounded-lg border text-[11px] font-mono ${
-                  isDemoChain
-                    ? "bg-amber-50 border-amber-200 text-amber-700"
-                    : "bg-emerald-50 border-emerald-200 text-emerald-700"
+                  projectLoading
+                    ? "bg-slate-50 border-slate-200 text-slate-600"
+                    : isDemoChain
+                      ? "bg-amber-50 border-amber-200 text-amber-700"
+                      : "bg-emerald-50 border-emerald-200 text-emerald-700"
                 }`}
               >
                 <span className="material-symbols-outlined text-[14px]">
-                  {isDemoChain ? "science" : "verified"}
+                  {projectLoading ? "autorenew" : isDemoChain ? "science" : "verified"}
                 </span>
-                {isDemoChain
-                  ? "DEMO • Simulado — sin conexión al contrato"
-                  : `Medidores simulados. Anclado on-chain por el emisor: ${(onChainEnergy ?? BigInt(0)).toLocaleString("en-US")} kWh`}
+                {projectLoading
+                  ? "Cargando datos on-chain…"
+                  : isDemoChain
+                    ? "DEMO • Simulado — sin conexión al contrato"
+                    : `Medidores simulados. Anclado on-chain por el emisor: ${(onChainEnergy ?? BigInt(0)).toLocaleString("en-US")} kWh`}
                 {claimable != null && connected && (
                   <span className="ml-auto font-bold">por reclamar: {formatXlm(claimable)} XLM</span>
                 )}
@@ -974,9 +987,6 @@ export default function ProjectDetailClient({ id }: { id?: string }) {
                     <span className="text-slate-500">Costo Total</span>
                     <span className="font-mono font-bold text-slate-900">
                       {formatXlm(totalPriceStroops)} XLM
-                      <span className="ml-1 text-[11px] font-normal text-slate-400">
-                        (~${fmt(costUsd)} USD ref.)
-                      </span>
                     </span>
                   </div>
                   <div className="flex justify-between text-[13px]">
@@ -1123,9 +1133,8 @@ export default function ProjectDetailClient({ id }: { id?: string }) {
                   </span>
                 </div>
                 <p className="mb-3 text-[12px] leading-relaxed text-slate-500">
-                  Emisores de proyectos solares: contáctanos para integraciones
-                  dedicadas, estructura legal personalizada y onboarding
-                  corporativo.
+                  ¿Tienes un proyecto solar? Contáctanos para conversar sobre
+                  cómo registrarlo en la plataforma.
                 </p>
                 <button className="w-full rounded-lg border border-slate-200 bg-white py-2 text-[12px] font-semibold text-slate-700 transition-all hover:bg-slate-50">
                   Contactar Equipo
@@ -1152,7 +1161,6 @@ export default function ProjectDetailClient({ id }: { id?: string }) {
         assetId={meta.asset}
         tokenCount={tokenCount}
         costXlm={costXlm}
-        costUsd={costUsd}
         capacityWp={capacityAdjudicada}
         walletAddress={address || ""}
         walletBalance={balance}
@@ -1170,7 +1178,6 @@ export default function ProjectDetailClient({ id }: { id?: string }) {
         txHash={txHash}
         tokenCount={tokenCount}
         costXlm={costXlm}
-        costUsd={costUsd}
         projectName={projectName}
         projectFlag={meta.flag}
         assetId={meta.asset}
