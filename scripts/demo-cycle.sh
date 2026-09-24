@@ -45,7 +45,7 @@ RPC_URL="https://soroban-testnet.stellar.org"
 
 # Errores de red de la RPC. Antes de reintentar se verifica por hash que la
 # transaccion firmada NO haya entrado al ledger, asi nunca se duplica una operacion.
-TRANSIENT='error \((Connect|SendRequest)\)|dns error|connection (refused|reset|closed)|tls handshake|timed out'
+TRANSIENT='error \((Connect|SendRequest)\)|dns error|connection (refused|reset|closed)|tls handshake|timed out|request timeout|timeout'
 
 # tx_status <hash>: SUCCESS | FAILED | NOT_FOUND (segun getTransaction de la RPC)
 tx_status() {
