@@ -1,6 +1,10 @@
 "use client";
 
-const projects = [
+import { useEffect, useState } from "react";
+import { useWallet } from "@/lib/WalletContext";
+import { CONTRACT_ID } from "@/lib/contract";
+
+const fallbackProjects = [
   {
     id: 1,
     name: "Solar Lima Norte",
@@ -54,11 +58,104 @@ const projects = [
   },
 ];
 
+type ChainProject = {
+  price: string;
+  funded: number;
+  total: number;
+  percent: number;
+  isReal: boolean;
+};
+
 function formatXLM(n: number) {
   return n.toLocaleString("en-US");
 }
 
 export default function FeaturedProjects() {
+  const { readContract } = useWallet();
+  const [chainData, setChainData] = useState<Record<number, ChainProject> | null>(null);
+  const [realCount, setRealCount] = useState<number | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const sdk = await import("@stellar/stellar-sdk");
+        const decode = (val: unknown) => {
+          try {
+            return (sdk as unknown as { scValToNative: (v: unknown) => unknown }).scValToNative(val as never);
+          } catch {
+            return val;
+          }
+        };
+        let nextId: number | null = null;
+        try {
+          const rawNext = await readContract(CONTRACT_ID, "next_project_id", []);
+          const d = decode(rawNext);
+          if (typeof d === "bigint") nextId = Number(d);
+          else if (typeof d === "number") nextId = d;
+          else nextId = Number(d as string);
+        } catch {
+          nextId = null;
+        }
+        if (!cancelled && nextId != null) setRealCount(nextId - 1);
+
+        const ids = [1, 2, 3];
+        const results: Record<number, ChainProject> = {};
+        for (const id of ids) {
+          try {
+            const raw = await readContract(CONTRACT_ID, "get_project", [id]);
+            const p = decode(raw) as Record<string, unknown>;
+            const totalSupply = BigInt((p.total_supply ?? p.totalSupply ?? 0) as string | number | bigint);
+            const minted = BigInt((p.minted ?? 0) as string | number | bigint);
+            const price = BigInt((p.price ?? 0) as string | number | bigint);
+            const priceXlm = `${Number(price) / 1_000_000} XLM`;
+            // funded/total in XLM: minted*price /1e6
+            const funded = Number((minted * price) / BigInt(1_000_000));
+            const total = Number((totalSupply * price) / BigInt(1_000_000));
+            const percent = totalSupply > BigInt(0) ? Number((minted * BigInt(100)) / totalSupply) : 0;
+            results[id] = { price: priceXlm, funded, total, percent, isReal: true };
+          } catch {
+            // keep fallback, mark as not real
+            const fallback = fallbackProjects.find((f) => f.id === id);
+            if (fallback) {
+              results[id] = {
+                price: fallback.price,
+                funded: fallback.funded,
+                total: fallback.total,
+                percent: fallback.percent,
+                isReal: false,
+              };
+            }
+          }
+        }
+        if (!cancelled) setChainData(results);
+      } catch (e) {
+        console.warn("FeaturedProjects chain fetch failed", e);
+      } finally {
+        if (!cancelled) setIsLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [readContract]);
+
+  const projects = fallbackProjects.map((p) => {
+    const chain = chainData?.[p.id];
+    if (chain) {
+      return {
+        ...p,
+        price: chain.price,
+        funded: chain.funded,
+        total: chain.total,
+        percent: chain.percent,
+        isReal: chain.isReal,
+      };
+    }
+    return { ...p, isReal: false };
+  });
+
   return (
     <section
       id="projects"
@@ -77,13 +174,13 @@ export default function FeaturedProjects() {
         </div>
         <div className="flex items-center gap-2">
           <button className="px-5 py-2 rounded-lg bg-emerald-600 text-white text-[13px] font-semibold shadow-sm hover:bg-emerald-700 transition-colors">
-            Todos (12)
+            Todos ({realCount != null ? realCount : 12})
           </button>
           <button className="px-5 py-2 rounded-lg bg-white border border-slate-200 text-slate-600 text-[13px] hover:text-slate-900 hover:border-slate-300 font-medium transition-colors">
-            Perú (8)
+            Perú ({realCount != null ? Math.min(realCount, 8) : 8})
           </button>
           <button className="px-5 py-2 rounded-lg bg-white border border-slate-200 text-slate-600 text-[13px] hover:text-slate-900 hover:border-slate-300 font-medium transition-colors">
-            Chile (4)
+            Chile ({realCount != null ? Math.max(0, realCount - 8) : 4})
           </button>
         </div>
       </div>
@@ -93,8 +190,14 @@ export default function FeaturedProjects() {
         {projects.map((p) => (
           <div
             key={p.id}
-            className="flex flex-col rounded-xl bg-white border border-slate-200 overflow-hidden shadow-md hover:shadow-xl transition-all duration-300 hover:translate-y-[-4px]"
+            className="flex flex-col rounded-xl bg-white border border-slate-200 overflow-hidden shadow-md hover:shadow-xl transition-all duration-300 hover:translate-y-[-4px] relative"
+            style={isLoading ? { opacity: 0.85 } : undefined}
           >
+            {!p.isReal && !isLoading && (
+              <span className="absolute top-2 left-2 z-10 px-1.5 py-0.5 rounded text-[9px] font-mono font-bold bg-amber-50 border border-amber-200 text-amber-700">
+                DEMO
+              </span>
+            )}
             {/* Image */}
             <div className="relative h-48 w-full overflow-hidden">
               <img
@@ -107,8 +210,9 @@ export default function FeaturedProjects() {
               {/* APY pill */}
               <div className="absolute top-4 right-4 px-4 py-1 rounded-full bg-white/95 border border-emerald-200 shadow-md flex items-center gap-2">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-600 animate-ping" />
-                <span className="font-mono text-[12px] font-bold text-emerald-700">
+                <span className="font-mono text-[12px] font-bold text-emerald-700" title="Proyección PPA, no garantizada">
                   {p.apy} APY
+                  <sup className="ml-1 text-[9px] font-normal text-slate-500">*Estimado</sup>
                 </span>
               </div>
 
@@ -146,7 +250,7 @@ export default function FeaturedProjects() {
                   <span className="font-mono text-[11px] text-slate-500 block font-medium">
                     PRECIO / TOKEN
                   </span>
-                  <span className="font-mono text-[14px] text-orange-600 font-bold">
+                  <span className="font-mono text-[14px] text-orange-600 font-bold" title={p.isReal ? "Precio on-chain (stroops→XLM)" : "Precio demo — valor de fallback"}>
                     {p.price}
                   </span>
                 </div>
@@ -158,7 +262,7 @@ export default function FeaturedProjects() {
                   <span className="text-slate-600 font-medium">
                     Financiado: {formatXLM(p.funded)} / {formatXLM(p.total)} XLM
                   </span>
-                  <span className="text-emerald-700 font-bold">
+                  <span className="text-emerald-700 font-bold" title={p.isReal ? "On-chain: minted/total_supply" : "Demo — datos simulados"}>
                     {p.percent}%
                   </span>
                 </div>
