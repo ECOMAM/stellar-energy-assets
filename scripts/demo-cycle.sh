@@ -5,8 +5,9 @@
 # Uso:
 #   CONTRACT_ID=C... ./scripts/demo-cycle.sh
 #   LOG_FILE=docs/ciclo.md       archivo del registro (por defecto demo-cycle-<fecha>.md)
-#   RESUME_PROJECT_ID=1          reanuda desde el deposito de ingresos si un corte de red
-#                                interrumpio el ciclo (sin repetir aprobaciones ni compras)
+#   RESUME_PROJECT_ID=1          reanuda el ciclo de ese proyecto si un corte de red lo
+#                                interrumpio, sin repetir aprobaciones ni la creacion
+#   RESUME_STEP=deposit          paso desde el que se reanuda: purchase | energy | deposit
 #
 # Requiere el Stellar CLI y cuatro alias de testnet en su keystore. Si no
 # existen, se generan y se fondean con friendbot.
@@ -45,7 +46,7 @@ RPC_URL="https://soroban-testnet.stellar.org"
 
 # Errores de red de la RPC. Antes de reintentar se verifica por hash que la
 # transaccion firmada NO haya entrado al ledger, asi nunca se duplica una operacion.
-TRANSIENT='error \((Connect|SendRequest)\)|dns error|connection (refused|reset|closed)|tls handshake|timed out|request timeout|timeout'
+TRANSIENT='error \((Connect|SendRequest)\)|dns error|connection (refused|reset|closed)|tls handshake|timed out|request timeout|timeout|SendRequest|ConnectionReset|No status yet'
 
 # tx_status <hash>: SUCCESS | FAILED | NOT_FOUND (segun getTransaction de la RPC)
 tx_status() {
@@ -123,7 +124,9 @@ if [ -n "${RESUME_PROJECT_ID:-}" ]; then
     # Reanudar tras un corte de red: el proyecto ya tiene compras y energia,
     # se continua desde el deposito de ingresos y se agrega al mismo registro.
     PID="$RESUME_PROJECT_ID"
-    echo "↪ Reanudando el proyecto $PID desde el depósito de ingresos (registro: $LOG)" >&2
+    STEP="${RESUME_STEP:-deposit}"
+    case "$STEP" in purchase|energy|deposit) ;; *) echo "RESUME_STEP debe ser purchase, energy o deposit" >&2; exit 1;; esac
+    echo "↪ Reanudando el proyecto $PID desde el paso '$STEP' (registro: $LOG)" >&2
 else
 
 {
@@ -152,13 +155,19 @@ if ! [[ "$PID" =~ ^[0-9]+$ ]]; then
     PID=$(( $(view next_project_id | tr -d '"') - 1 ))
 fi
 
+STEP="purchase"
+fi
+
 # 3. Los participantes adquieren participaciones: el XLM pasa al contrato via el SAC
-invoke "$P1" "Participante 1 adquiere 30 (300 XLM)" purchase_tokens --buyer "$P1_ADDR" --project_id "$PID" --amount 30 > /dev/null
-invoke "$P2" "Participante 2 adquiere 10 (100 XLM)" purchase_tokens --buyer "$P2_ADDR" --project_id "$PID" --amount 10 > /dev/null
+if [ "$STEP" = "purchase" ]; then
+    invoke "$P1" "Participante 1 adquiere 30 (300 XLM)" purchase_tokens --buyer "$P1_ADDR" --project_id "$PID" --amount 30 > /dev/null
+    invoke "$P2" "Participante 2 adquiere 10 (100 XLM)" purchase_tokens --buyer "$P2_ADDR" --project_id "$PID" --amount 10 > /dev/null
+    STEP="energy"
+fi
 
 # 4. Telemetria anclada: energia generada informada por el emisor
-invoke "$ISSUER" "Energía registrada: +1250 kWh" update_energy --caller "$ISSUER_ADDR" --project_id "$PID" --energy_delta 1250 > /dev/null
-
+if [ "$STEP" = "energy" ]; then
+    invoke "$ISSUER" "Energía registrada: +1250 kWh" update_energy --caller "$ISSUER_ADDR" --project_id "$PID" --energy_delta 1250 > /dev/null
 fi
 
 # 5. El emisor deposita 40 XLM de ingresos de energia, a repartir en proporcion

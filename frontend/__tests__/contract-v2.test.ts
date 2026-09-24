@@ -25,7 +25,7 @@ describe("encodeContractArgs (v2 signatures)", () => {
   const kinds = (method: string, args: unknown[]) => encodeContractArgs(sdk, method, args).map(tag);
 
   it("uses the v2 contract id as fallback", () => {
-    expect(CONTRACT_ID).toBe("CADAAIOMITOWW6MI5YF4UNE6T5GQWY7OF6SHRJNQS4ZGGQ4UDEQXCMNM");
+    expect(CONTRACT_ID).toBe("CAFJK3XSGBJVOPIDPKJ7CCGNCGHFZOXA75HDQ372KDJSEKXVVPQ4EVQK");
   });
 
   it("has no initialize (the v2 contract uses a constructor)", () => {

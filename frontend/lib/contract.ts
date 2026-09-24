@@ -1,17 +1,17 @@
-// NIKO SUN contract v2 on Stellar testnet (constructor-based deployment, no
+// NIKO SUN contract v2.1 on Stellar testnet (constructor-based deployment, no
 // `initialize`). See docs/ciclo-onchain-testnet.md for the on-chain cycle.
 export const CONTRACT_ID =
   process.env.NEXT_PUBLIC_CONTRACT_ID ||
-  "CADAAIOMITOWW6MI5YF4UNE6T5GQWY7OF6SHRJNQS4ZGGQ4UDEQXCMNM";
+  "CAFJK3XSGBJVOPIDPKJ7CCGNCGHFZOXA75HDQ372KDJSEKXVVPQ4EVQK";
 
 /**
- * Ledger of the v2 deploy tx (55db825b…, 2026-09-24). Lower bound for event
+ * Ledger of the v2.1 deploy tx (182e635d…, 2026-09-24). Lower bound for event
  * scans; ignored when NEXT_PUBLIC_CONTRACT_ID points at another contract.
  */
 export const CONTRACT_DEPLOY_LEDGER: number | null =
-  CONTRACT_ID === "CADAAIOMITOWW6MI5YF4UNE6T5GQWY7OF6SHRJNQS4ZGGQ4UDEQXCMNM" ? 4852336 : null;
+  CONTRACT_ID === "CAFJK3XSGBJVOPIDPKJ7CCGNCGHFZOXA75HDQ372KDJSEKXVVPQ4EVQK" ? 4853675 : null;
 
-/** Native XLM Stellar Asset Contract (payment token of the v2 contract). */
+/** Native XLM Stellar Asset Contract (payment token of the contract). */
 export const NATIVE_XLM_SAC =
   "CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC";
 

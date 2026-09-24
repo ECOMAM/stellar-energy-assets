@@ -1205,6 +1205,10 @@ function AdminView() {
     let minPurchase: bigint;
     try {
       if (!form.name.trim()) throw new Error("Ingresa un nombre para el proyecto");
+      // Same bound the contract enforces (InvalidName, #15): 1..64 bytes of UTF-8
+      if (new TextEncoder().encode(form.name.trim()).length > 64) {
+        throw new Error("El nombre del proyecto no puede superar los 64 bytes (unos 64 caracteres sin tildes)");
+      }
       supply = parseWhole(form.supply, "Supply total");
       price = xlmToStroops(form.price.replace(/xlm/i, "").trim());
       minPurchase = parseWhole(form.minPurchase || "1", "Compra mínima");

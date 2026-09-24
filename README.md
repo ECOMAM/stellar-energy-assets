@@ -127,32 +127,41 @@ Funciones públicas (v2), agrupadas por rol:
 - La pausa global bloquea el ingreso de nuevo XLM, pero nunca bloquea `claim_revenue` ni los retiros ya disponibles.
 - Se emite un evento por cada cambio de estado.
 - El TTL de la instancia se extiende en cada escritura.
-- Errores de contrato tipados.
+- Errores de contrato tipados (`#[contracterror]`, códigos 1–15). "Saldo insuficiente" (`#11`, que también cubre la reserva mínima de la cuenta) y "supply agotado" (`#10`) se distinguen.
+- Almacenamiento: cada dato por cuenta y por proyecto vive en su propia entrada persistente por clave. La instancia guarda solo configuración de tamaño fijo, así que el contrato no se degrada con la cantidad de participantes: se probó con 400 y la instancia se mantuvo en 308 bytes.
 - Contrato inmutable: no existe función de actualización.
 - Las participaciones no son tokens SEP-41: son saldos internos no transferibles por diseño, sin mercado secundario.
 
 ## Evidencia on-chain
 
-### Contrato v2 (versión actual, endurecida)
+### Contrato v2.1 (versión actual)
 
-**Contract ID:** [`CADAAIOMITOWW6MI5YF4UNE6T5GQWY7OF6SHRJNQS4ZGGQ4UDEQXCMNM`](https://stellar.expert/explorer/testnet/contract/CADAAIOMITOWW6MI5YF4UNE6T5GQWY7OF6SHRJNQS4ZGGQ4UDEQXCMNM)
+**Contract ID:** [`CAFJK3XSGBJVOPIDPKJ7CCGNCGHFZOXA75HDQ372KDJSEKXVVPQ4EVQK`](https://stellar.expert/explorer/testnet/contract/CAFJK3XSGBJVOPIDPKJ7CCGNCGHFZOXA75HDQ372KDJSEKXVVPQ4EVQK)
 
 Ciclo completo ejecutado en testnet el 2026-09-24 con `scripts/demo-cycle.sh`:
 
 | Paso | Transacción |
 |---|---|
-| Despliegue con constructor (wasm `5ef31ba2…`, commit `61b6ebe`) | [`55db825b600d…`](https://stellar.expert/explorer/testnet/tx/55db825b600da6acf3c6dbcd193f9a65dfab639671f655213dff62164efd084e) |
-| Emisor verificado (`set_issuer`) | [`6e752aead3d2…`](https://stellar.expert/explorer/testnet/tx/6e752aead3d20982c031f0710da9653a3342ce7d27df5249f6b6137cd151ccdd) |
-| Participante aprobado (`set_participant`) | [`843d1f86906d…`](https://stellar.expert/explorer/testnet/tx/843d1f86906d7eecd003f8374962c0cc906f9ada7beea2b5fa0083ddc8952baa) |
-| `create_project` | [`994c660f64e8…`](https://stellar.expert/explorer/testnet/tx/994c660f64e8700488403f747e3f638d9400cd2e9e79f2b90c635b0a90557687) |
-| `purchase_tokens` (30 participaciones, 300 XLM) | [`d4fffe34dbf7…`](https://stellar.expert/explorer/testnet/tx/d4fffe34dbf7edb289fb4f68eec0d24f2c6704440fb34ad507e20b9e473f555e) |
-| `update_energy` (+1250 kWh) | [`e81279ebb1b8…`](https://stellar.expert/explorer/testnet/tx/e81279ebb1b8d89a4f470ceb23e2ad118f2ae3a300e793224ec6d5c288ef5326) |
-| `deposit_revenue` (40 XLM) | [`f85d09ebbaf5…`](https://stellar.expert/explorer/testnet/tx/f85d09ebbaf5ca1c0454968035358a5728cc88d961806301a74ca7671b6c5a12) |
-| `claim_revenue` (30 XLM al participante 1) | [`e4b52a6d9b95…`](https://stellar.expert/explorer/testnet/tx/e4b52a6d9b95181e37530695c03a4038100b0e9216ae123f8a1c336b2074851f) |
-| `withdraw_sales` (200 XLM al emisor) | [`c4b32d21c26c…`](https://stellar.expert/explorer/testnet/tx/c4b32d21c26ca439450cebb6494e9273418589fa09c6a29459fc0b97d333f9cc) |
-| `set_paused` (compra rechazada con `Paused #5` durante la pausa) | [`e9726c60915b…`](https://stellar.expert/explorer/testnet/tx/e9726c60915b0893caf7867743add5f4b5a49314133e518a87f3b919667f5be7) |
+| Despliegue con constructor (wasm `3f86af78…`, commit `982b7f1`) | [`182e635db3f9…`](https://stellar.expert/explorer/testnet/tx/182e635db3f9e2285c7edae4abbf183a2c7a7bb41585d55319d1c22d68be20e9) |
+| Emisor verificado (`set_issuer`) | [`c55cfc0754f0…`](https://stellar.expert/explorer/testnet/tx/c55cfc0754f0d65b8284e0188479f659464d2a43c63f5795a0a81b5cd181a531) |
+| Participante aprobado (`set_participant`) | [`d00c017bc645…`](https://stellar.expert/explorer/testnet/tx/d00c017bc6454cd20c2cdb8b0ed5327c381a826e2a44cab2af1c174cec65ef00) |
+| `create_project` | [`c5a18d0eaffb…`](https://stellar.expert/explorer/testnet/tx/c5a18d0eaffb1aafbde411fd501308e76817595b79915a671f1ba40072f7b0d2) |
+| `purchase_tokens` (30 participaciones, 300 XLM) | [`7e09bac64934…`](https://stellar.expert/explorer/testnet/tx/7e09bac64934f7f130d0a200c28c2e62edd1e79053f4fde6cd765f9d11236e9f) |
+| `update_energy` (+1250 kWh) | [`2a2e533a230f…`](https://stellar.expert/explorer/testnet/tx/2a2e533a230ff053924e041e254cf9dea6ca07debb230587922ff36ab510ffba) |
+| `deposit_revenue` (40 XLM) | [`1493a38d874d…`](https://stellar.expert/explorer/testnet/tx/1493a38d874d96be33bb75a14fe0f47dc2f6eb0147f38a72e672d9af6f9eb0b7) |
+| `claim_revenue` (30 XLM al participante 1) | [`f27deb604133…`](https://stellar.expert/explorer/testnet/tx/f27deb604133baf8584e1290007cffbe1d5920bcac6fa957c45d95dfd67363f1) |
+| `withdraw_sales` (200 XLM al emisor) | [`19de8fbeec5b…`](https://stellar.expert/explorer/testnet/tx/19de8fbeec5b0073632a1fd9ebbb309f8d6d8351f559972bef9fd1c0624013ba) |
+| `set_paused` (compra rechazada con `Paused #5` durante la pausa) | [`b0c1f2f68eda…`](https://stellar.expert/explorer/testnet/tx/b0c1f2f68eda442f9cc370e07c7e78f172aaaf87063057c634f52d797dc443b7) |
 
-El detalle completo está en [`docs/ciclo-onchain-testnet.md`](docs/ciclo-onchain-testnet.md): todos los pasos, los efectos en Horizon que muestran el movimiento real de XLM, los costos medidos por operación y el TTL del contrato (vivo hasta ≈ 2026-10-25).
+El detalle completo está en [`docs/ciclo-onchain-testnet.md`](docs/ciclo-onchain-testnet.md):
+- todos los pasos;
+- los efectos en Horizon que muestran el movimiento real de XLM;
+- las correcciones de la revisión de seguridad verificadas on-chain (`#11` por saldo insuficiente, incluida la reserva mínima; `#15` por nombre inválido);
+- los costos medidos por operación;
+- el TTL del contrato (vivo hasta ≈ 2026-10-25);
+- el historial de versiones. La revisión de seguridad está en [`docs/security-audit.md`](docs/security-audit.md).
+
+La versión anterior, **v2** ([`CADAAIOMITOWW6MI5YF4UNE6T5GQWY7OF6SHRJNQS4ZGGQ4UDEQXCMNM`](https://stellar.expert/explorer/testnet/contract/CADAAIOMITOWW6MI5YF4UNE6T5GQWY7OF6SHRJNQS4ZGGQ4UDEQXCMNM)), completó el mismo ciclo. La v2.1 la reemplaza porque mueve el estado por cuenta a storage persistente por clave.
 
 ### Historial v1 (primera versión del contrato, solo contable, sin movimiento de XLM; se conserva por trazabilidad)
 
