@@ -1,12 +1,11 @@
 import { describe, it, expect } from "vitest";
 
 // ═══════════════════════════════════════════════════════════
-// UNIT: Investment calculations
+// UNIT: Participation calculations (cost, capacity, call args)
 // ═══════════════════════════════════════════════════════════
 
-describe("Investment calculator", () => {
+describe("Participation calculator", () => {
   const PRICE_PER_TOKEN = 10; // XLM
-  const APY = 12.5; // percent
   const TOKEN_WP = 1.5; // Wp per token
   const XLM_TO_USD = 0.13;
 
@@ -26,18 +25,6 @@ describe("Investment calculator", () => {
     const tokenCount = 100;
     const capacity = tokenCount * TOKEN_WP;
     expect(capacity).toBe(150);
-  });
-
-  it("calculates daily return", () => {
-    const costXlm = 1000;
-    const daily = (costXlm * APY) / 100 / 365;
-    expect(daily).toBeCloseTo(0.342, 2);
-  });
-
-  it("calculates annual return", () => {
-    const costXlm = 1000;
-    const annual = costXlm * (APY / 100);
-    expect(annual).toBe(125);
   });
 
   it("calculates CO2 offset per token", () => {

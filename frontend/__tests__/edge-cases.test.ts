@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 
 // ═══════════════════════════════════════════════════════════
-// UNIT: Edge cases for the complete investment flow
+// UNIT: Edge cases for the complete participation flow
 // ═══════════════════════════════════════════════════════════
 
 describe("Flow edge cases", () => {
