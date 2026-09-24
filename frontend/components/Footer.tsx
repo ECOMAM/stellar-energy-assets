@@ -73,10 +73,11 @@ export default function Footer() {
               </span>
             </a>
             <a
-              href="https://github.com/NIKOSUN-ORG/niko-sun-stellar"
+              href="https://github.com/FernandoMay/niko-sun-stellar"
               target="_blank"
               rel="noopener noreferrer"
               className="text-[13px] text-slate-600 hover:text-orange-600 transition-colors"
+              title="Repositorio oficial — github.com/FernandoMay/niko-sun-stellar"
             >
               GitHub Contracts
             </a>
