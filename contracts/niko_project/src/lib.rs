@@ -2,7 +2,9 @@
 
 use soroban_sdk::{
     contract, contracterror, contractevent, contractimpl, contracttype, panic_with_error,
-    symbol_short, token, Address, Env, Map, String, Symbol, Vec,
+    symbol_short, token,
+    xdr::{ScErrorCode, ScErrorType},
+    Address, Env, IntoVal, InvokeError, String, Symbol, Val, Vec,
 };
 
 // ========================================
@@ -22,22 +24,62 @@ const INSTANCE_TTL_EXTEND_TO: u32 = 535_680;
 /// the rent it costs, only happens once the remaining TTL drops below this.
 const INSTANCE_TTL_THRESHOLD: u32 = 518_400;
 
-// Storage keys (all in instance storage)
+/// Persistent entry TTL target: the same ~31 days as the instance. A
+/// persistent entry is extended to this when it is written, and also when a
+/// mutating function reads it.
+const PERSISTENT_TTL_EXTEND_TO: u32 = INSTANCE_TTL_EXTEND_TO;
+
+/// Same ~1 day window as `INSTANCE_TTL_THRESHOLD`.
+const PERSISTENT_TTL_THRESHOLD: u32 = INSTANCE_TTL_THRESHOLD;
+
+/// Longest accepted project name, in bytes (UTF-8, not characters).
+const MAX_NAME_LEN: u32 = 64;
+
+/// Contract error code of the Stellar Asset Contract's `BalanceError` (the
+/// payer cannot cover a transfer). It is the same number as this contract's
+/// `InsufficientSupply`, so `collect_payment` never lets it escape.
+const SAC_BALANCE_ERROR: u32 = 10;
+
+// Instance storage keys. The instance only holds fixed-size configuration and
+// counters, so its size does not depend on the number of projects or
+// accounts.
 const ADMIN: Symbol = symbol_short!("ADMIN");
 const TOKEN: Symbol = symbol_short!("TOKEN");
 const PAUSED: Symbol = symbol_short!("PAUSED");
-const ISSUERS: Symbol = symbol_short!("ISSUERS");
-const PARTICIPANTS: Symbol = symbol_short!("PARTICIP");
 const NEXT_ID: Symbol = symbol_short!("NEXT_ID");
-const PROJECTS: Symbol = symbol_short!("PROJECTS");
-const NAMES: Symbol = symbol_short!("NAMES");
-const SALES: Symbol = symbol_short!("SALES");
-const REWARD_PAID: Symbol = symbol_short!("RWPAID");
-const PENDING: Symbol = symbol_short!("PENDING");
-const PENDING_CLAIM: Symbol = symbol_short!("PNDCLAIM");
-const CLAIMED: Symbol = symbol_short!("CLAIMED");
-const USER_PROJECTS: Symbol = symbol_short!("USRPRJ");
 const TOTAL_SALES: Symbol = symbol_short!("T_SALES");
+
+/// Persistent storage keys: one ledger entry per project and per
+/// (project, account), each with its own TTL, so no entry grows with the
+/// number of projects or accounts.
+///
+/// Internal only: the type never crosses the contract boundary (arguments,
+/// return values, events or errors), so it is left out of the contract spec.
+#[contracttype]
+#[derive(Clone)]
+#[cfg_attr(test, derive(Debug))]
+enum DataKey {
+    /// The `Project` record.
+    Project(u64),
+    /// The project name (1 to `MAX_NAME_LEN` bytes).
+    Name(u64),
+    /// Sales proceeds the creator has not withdrawn yet (stroops).
+    Sales(u64),
+    /// Participations an account holds in a project.
+    Balance(u64, Address),
+    /// The account's reward-per-token checkpoint in a project.
+    RewardPaid(u64, Address),
+    /// Rewards settled at an earlier balance and not claimed yet.
+    PendingClaim(u64, Address),
+    /// Revenue the account has claimed from a project so far.
+    Claimed(u64, Address),
+    /// Ids of the projects an account created or received by transfer.
+    UserProjects(Address),
+    /// Present while the account is a verified issuer.
+    Issuer(Address),
+    /// Present while the account is an approved participant.
+    Participant(Address),
+}
 
 // ========================================
 // ERRORS
@@ -70,7 +112,8 @@ pub enum Error {
     BelowMinimum = 9,
     /// Not enough unminted supply left for this purchase.
     InsufficientSupply = 10,
-    /// Withdrawal exceeds the project's sales balance.
+    /// Withdrawal exceeds the project's sales balance, or the payer's token
+    /// balance does not cover a purchase or a revenue deposit.
     InsufficientBalance = 11,
     /// Revenue cannot be deposited before any participation is minted.
     NoTokensMinted = 12,
@@ -78,6 +121,8 @@ pub enum Error {
     Overflow = 13,
     /// Deposit too small to move the reward-per-token index.
     RewardTooSmall = 14,
+    /// Project name is empty or longer than 64 bytes.
+    InvalidName = 15,
 }
 
 // ========================================
@@ -242,6 +287,25 @@ fn extend_instance_ttl(env: &Env) {
         .extend_ttl(INSTANCE_TTL_THRESHOLD, INSTANCE_TTL_EXTEND_TO);
 }
 
+/// Extend the TTL of a persistent entry. The entry must exist: callers use
+/// it for entries a mutating function has just read (and found).
+fn extend_persistent_ttl(env: &Env, key: &DataKey) {
+    env.storage()
+        .persistent()
+        .extend_ttl(key, PERSISTENT_TTL_THRESHOLD, PERSISTENT_TTL_EXTEND_TO);
+}
+
+/// Write a persistent entry and extend its TTL.
+fn write_persistent<V: IntoVal<Env, Val>>(env: &Env, key: &DataKey, value: &V) {
+    env.storage().persistent().set(key, value);
+    extend_persistent_ttl(env, key);
+}
+
+/// Read a `u128` persistent entry, 0 when it does not exist. Read-only.
+fn read_u128(env: &Env, key: &DataKey) -> u128 {
+    env.storage().persistent().get(key).unwrap_or(0)
+}
+
 /// Stored admin. ADMIN is written by `__constructor`, which the host runs
 /// atomically with the deployment (CAP-0058), so the `None` branch cannot be
 /// reached; it maps to `NotAdmin` because there is no admin to match.
@@ -282,30 +346,29 @@ fn require_not_paused(env: &Env) {
     }
 }
 
-/// Read a per-account flag from an allowlist (issuers or participants).
-fn has_flag(env: &Env, key: &Symbol, account: &Address) -> bool {
-    let flags: Map<Address, bool> = env
-        .storage()
-        .instance()
-        .get(key)
-        .unwrap_or_else(|| Map::new(env));
-    flags.get(account.clone()).unwrap_or(false)
+/// Whether an allowlist flag (`Issuer` or `Participant` key) is set.
+/// Read-only, for the views.
+fn has_flag(env: &Env, key: &DataKey) -> bool {
+    env.storage().persistent().get(key).unwrap_or(false)
 }
 
-/// Grant (`true`) or revoke (`false`) a per-account flag. Revoking removes
-/// the entry so the instance does not keep stale accounts.
-fn write_flag(env: &Env, key: &Symbol, account: &Address, value: bool) {
-    let mut flags: Map<Address, bool> = env
-        .storage()
-        .instance()
-        .get(key)
-        .unwrap_or_else(|| Map::new(env));
-    if value {
-        flags.set(account.clone(), true);
-    } else {
-        flags.remove(account.clone());
+/// Allowlist check on a mutating path: fail with `err` unless the flag is
+/// set, and extend the flag entry's TTL because this function read it.
+fn require_flag(env: &Env, key: &DataKey, err: Error) {
+    if !has_flag(env, key) {
+        panic_with_error!(env, err);
     }
-    env.storage().instance().set(key, &flags);
+    extend_persistent_ttl(env, key);
+}
+
+/// Grant (`true`) or revoke (`false`) an allowlist flag. Revoking removes
+/// the entry; the positions the account already holds are not touched.
+fn write_flag(env: &Env, key: &DataKey, value: bool) {
+    if value {
+        write_persistent(env, key, &true);
+    } else {
+        env.storage().persistent().remove(key);
+    }
 }
 
 /// Token client bound to the payment token configured at construction.
@@ -313,18 +376,54 @@ fn token_client(env: &Env) -> token::TokenClient<'_> {
     token::TokenClient::new(env, &read_token(env))
 }
 
-/// Load the projects map together with one project (`ProjectNotFound` if it
-/// does not exist).
-fn load_project(env: &Env, project_id: u64) -> (Map<u64, Project>, Project) {
-    let projects: Map<u64, Project> = env
-        .storage()
-        .instance()
-        .get(&PROJECTS)
-        .unwrap_or_else(|| Map::new(env));
-    let project = projects
-        .get(project_id)
-        .unwrap_or_else(|| panic_with_error!(env, Error::ProjectNotFound));
-    (projects, project)
+/// Move `amount` of the payment token from `payer` into the contract.
+///
+/// A payer who cannot cover the payment fails with this contract's
+/// `InsufficientBalance` (#11), never with the token's own `BalanceError`
+/// (#10, the same number as `InsufficientSupply`):
+/// 1. `balance(payer) >= amount` is checked before the transfer.
+/// 2. For native XLM held by a Stellar account, `balance()` also counts the
+///    account's minimum reserve, which `transfer` refuses to spend, so a
+///    payer inside that window passes the check. The transfer therefore
+///    goes through `try_transfer`, and the token's `BalanceError` is mapped
+///    to `InsufficientBalance` as well. Any other failure is raised again
+///    unchanged.
+fn collect_payment(env: &Env, payer: &Address, amount: i128) {
+    let token = token_client(env);
+    if token.balance(payer) < amount {
+        panic_with_error!(env, Error::InsufficientBalance);
+    }
+    if let Err(failure) = token.try_transfer(payer, env.current_contract_address(), &amount) {
+        // `soroban_sdk::Error` converts from every host error, so the failure
+        // always arrives as `Ok(error)`; the `InvokeError` arms only complete
+        // the match.
+        let error = match failure {
+            Ok(error) => error,
+            Err(InvokeError::Contract(code)) => soroban_sdk::Error::from_contract_error(code),
+            Err(InvokeError::Abort) => {
+                soroban_sdk::Error::from_type_and_code(ScErrorType::Context, ScErrorCode::InvalidAction)
+            }
+        };
+        if error == soroban_sdk::Error::from_contract_error(SAC_BALANCE_ERROR) {
+            panic_with_error!(env, Error::InsufficientBalance);
+        }
+        panic_with_error!(env, error);
+    }
+}
+
+/// Load a project (`ProjectNotFound` if it does not exist). Read-only: a
+/// mutating function either writes it back with `save_project` or extends
+/// its TTL with `extend_persistent_ttl`.
+fn load_project(env: &Env, project_id: u64) -> Project {
+    env.storage()
+        .persistent()
+        .get(&DataKey::Project(project_id))
+        .unwrap_or_else(|| panic_with_error!(env, Error::ProjectNotFound))
+}
+
+/// Write a project record (and extend its TTL).
+fn save_project(env: &Env, project_id: u64, project: &Project) {
+    write_persistent(env, &DataKey::Project(project_id), project);
 }
 
 fn require_creator(env: &Env, project: &Project, caller: &Address) {
@@ -370,6 +469,22 @@ fn to_token_amount(env: &Env, amount: u128, err: Error) -> i128 {
 fn accrued_rewards(env: &Env, balance: u128, reward_per_token: u128, paid: u128) -> u128 {
     let delta = reward_per_token.saturating_sub(paid);
     mul_or_overflow(env, balance, delta) / PRECISION
+}
+
+/// What `investor` can claim from a project now: the rewards accrued on
+/// `balance` since the checkpoint plus any settled `PendingClaim`. Read-only
+/// (used by the views).
+fn claimable_amount(
+    env: &Env,
+    project: &Project,
+    project_id: u64,
+    investor: &Address,
+    balance: u128,
+) -> u128 {
+    let paid = read_u128(env, &DataKey::RewardPaid(project_id, investor.clone()));
+    let accrued = accrued_rewards(env, balance, project.reward_per_token_stored, paid);
+    let pending = read_u128(env, &DataKey::PendingClaim(project_id, investor.clone()));
+    add_or_overflow(env, accrued, pending)
 }
 
 // ========================================
@@ -430,7 +545,7 @@ impl NikoProject {
     pub fn set_issuer(env: Env, admin: Address, account: Address, verified: bool) {
         require_admin(&env, &admin);
 
-        write_flag(&env, &ISSUERS, &account, verified);
+        write_flag(&env, &DataKey::Issuer(account.clone()), verified);
         extend_instance_ttl(&env);
 
         IssuerUpdated { account, verified }.publish(&env);
@@ -441,7 +556,7 @@ impl NikoProject {
     pub fn set_participant(env: Env, admin: Address, account: Address, approved: bool) {
         require_admin(&env, &admin);
 
-        write_flag(&env, &PARTICIPANTS, &account, approved);
+        write_flag(&env, &DataKey::Participant(account.clone()), approved);
         extend_instance_ttl(&env);
 
         ParticipantUpdated { account, approved }.publish(&env);
@@ -468,12 +583,12 @@ impl NikoProject {
 
     /// Whether `account` is a verified issuer.
     pub fn is_issuer(env: Env, account: Address) -> bool {
-        has_flag(&env, &ISSUERS, &account)
+        has_flag(&env, &DataKey::Issuer(account))
     }
 
     /// Whether `account` is an approved participant.
     pub fn is_participant(env: Env, account: Address) -> bool {
-        has_flag(&env, &PARTICIPANTS, &account)
+        has_flag(&env, &DataKey::Participant(account))
     }
 
     // ========================================
@@ -481,7 +596,7 @@ impl NikoProject {
     // ========================================
 
     /// Create a new solar project. Returns the project ID. Only verified
-    /// issuers may create projects.
+    /// issuers may create projects. `name` must be 1 to 64 bytes long.
     pub fn create_project(
         env: Env,
         creator: Address,
@@ -492,13 +607,16 @@ impl NikoProject {
     ) -> u64 {
         creator.require_auth();
 
-        if !has_flag(&env, &ISSUERS, &creator) {
-            panic_with_error!(&env, Error::NotIssuer);
-        }
+        require_flag(&env, &DataKey::Issuer(creator.clone()), Error::NotIssuer);
 
         // Validate inputs
         if total_supply == 0 || price == 0 || min_purchase == 0 || min_purchase > total_supply {
             panic_with_error!(&env, Error::InvalidAmount);
+        }
+        // Bounded name, counted in bytes (a multi-byte UTF-8 character
+        // counts as several).
+        if name.is_empty() || name.len() > MAX_NAME_LEN {
+            panic_with_error!(&env, Error::InvalidName);
         }
 
         let project_id: u64 = env
@@ -524,38 +642,19 @@ impl NikoProject {
             reward_per_token_stored: 0,
         };
 
-        // Store project
-        let mut projects: Map<u64, Project> = env
-            .storage()
-            .instance()
-            .get(&PROJECTS)
-            .unwrap_or(Map::new(&env));
-        projects.set(project_id, project);
-        env.storage().instance().set(&PROJECTS, &projects);
-
-        // Store name
-        let mut names: Map<u64, String> = env
-            .storage()
-            .instance()
-            .get(&NAMES)
-            .unwrap_or(Map::new(&env));
-        names.set(project_id, name.clone());
-        env.storage().instance().set(&NAMES, &names);
+        // Store project and name
+        save_project(&env, project_id, &project);
+        write_persistent(&env, &DataKey::Name(project_id), &name);
 
         // Track user projects
-        let mut user_projects: Map<Address, Vec<u64>> = env
+        let user_key = DataKey::UserProjects(creator.clone());
+        let mut user_projects: Vec<u64> = env
             .storage()
-            .instance()
-            .get(&USER_PROJECTS)
-            .unwrap_or(Map::new(&env));
-        let mut up = user_projects
-            .get(creator.clone())
-            .unwrap_or(Vec::new(&env));
-        up.push_back(project_id);
-        user_projects.set(creator.clone(), up);
-        env.storage()
-            .instance()
-            .set(&USER_PROJECTS, &user_projects);
+            .persistent()
+            .get(&user_key)
+            .unwrap_or_else(|| Vec::new(&env));
+        user_projects.push_back(project_id);
+        write_persistent(&env, &user_key, &user_projects);
 
         extend_instance_ttl(&env);
 
@@ -580,16 +679,15 @@ impl NikoProject {
     /// from the buyer to the contract via the configured payment token.
     /// The buyer must be an approved participant, the contract must not be
     /// paused, and the project must already exist and be active; there is
-    /// no auto-initialization or auto-creation of projects.
+    /// no auto-initialization or auto-creation of projects. A buyer who
+    /// cannot pay gets `InsufficientBalance`.
     pub fn purchase_tokens(env: Env, buyer: Address, project_id: u64, amount: u128) {
         buyer.require_auth();
 
         require_not_paused(&env);
-        if !has_flag(&env, &PARTICIPANTS, &buyer) {
-            panic_with_error!(&env, Error::NotParticipant);
-        }
+        require_flag(&env, &DataKey::Participant(buyer.clone()), Error::NotParticipant);
 
-        let (mut projects, mut project) = load_project(&env, project_id);
+        let mut project = load_project(&env, project_id);
 
         // ── Security checks ──
         require_active(&env, &project);
@@ -607,32 +705,23 @@ impl NikoProject {
         let payment = to_token_amount(&env, total_price, Error::Overflow);
 
         // ── Move payment: buyer -> contract ──
-        token_client(&env).transfer(&buyer, env.current_contract_address(), &payment);
+        collect_payment(&env, &buyer, payment);
 
         // ── Reward settlement (must happen BEFORE the buyer's balance changes) ──
         // A buyer's balance increasing after rewards have already accrued
         // must not let them retroactively claim rewards that accrued
         // before this purchase. So we settle whatever is currently
-        // earned-but-unclaimed at the OLD balance into PENDING_CLAIM,
-        // bump the REWARD_PAID checkpoint to the current reward index,
+        // earned-but-unclaimed at the OLD balance into PendingClaim,
+        // bump the RewardPaid checkpoint to the current reward index,
         // and only then increase the balance below.
-        let mut balances: Map<(u64, Address), u128> = env
-            .storage()
-            .instance()
-            .get(&PENDING)
-            .unwrap_or(Map::new(&env));
-        let current_balance = balances.get((project_id, buyer.clone())).unwrap_or(0);
-
-        let mut reward_paid: Map<(u64, Address), u128> = env
-            .storage()
-            .instance()
-            .get(&REWARD_PAID)
-            .unwrap_or(Map::new(&env));
+        let balance_key = DataKey::Balance(project_id, buyer.clone());
+        let paid_key = DataKey::RewardPaid(project_id, buyer.clone());
+        let current_balance = read_u128(&env, &balance_key);
 
         // With a zero balance nothing could have accrued yet: only the
         // checkpoint below is needed.
         if current_balance > 0 {
-            let paid = reward_paid.get((project_id, buyer.clone())).unwrap_or(0);
+            let paid = read_u128(&env, &paid_key);
             let newly_earned = accrued_rewards(
                 &env,
                 current_balance,
@@ -641,43 +730,31 @@ impl NikoProject {
             );
 
             if newly_earned > 0 {
-                let mut pending_claim: Map<(u64, Address), u128> = env
-                    .storage()
-                    .instance()
-                    .get(&PENDING_CLAIM)
-                    .unwrap_or(Map::new(&env));
-                let prev_pending = pending_claim
-                    .get((project_id, buyer.clone()))
-                    .unwrap_or(0);
-                pending_claim.set(
-                    (project_id, buyer.clone()),
-                    add_or_overflow(&env, prev_pending, newly_earned),
+                let pending_key = DataKey::PendingClaim(project_id, buyer.clone());
+                let prev_pending = read_u128(&env, &pending_key);
+                write_persistent(
+                    &env,
+                    &pending_key,
+                    &add_or_overflow(&env, prev_pending, newly_earned),
                 );
-                env.storage().instance().set(&PENDING_CLAIM, &pending_claim);
             }
         }
-        reward_paid.set(
-            (project_id, buyer.clone()),
-            project.reward_per_token_stored,
-        );
-        env.storage().instance().set(&REWARD_PAID, &reward_paid);
+        write_persistent(&env, &paid_key, &project.reward_per_token_stored);
 
         // ── Update project state ──
         // Sales proceeds are NOT revenue: `total_revenue` only accumulates
         // `deposit_revenue` amounts (invariant I10).
         project.minted = new_minted;
-        projects.set(project_id, project);
-        env.storage().instance().set(&PROJECTS, &projects);
+        save_project(&env, project_id, &project);
 
         // Update sales balance
-        let mut sales: Map<u64, u128> = env
-            .storage()
-            .instance()
-            .get(&SALES)
-            .unwrap_or(Map::new(&env));
-        let current_sales = sales.get(project_id).unwrap_or(0);
-        sales.set(project_id, add_or_overflow(&env, current_sales, total_price));
-        env.storage().instance().set(&SALES, &sales);
+        let sales_key = DataKey::Sales(project_id);
+        let current_sales = read_u128(&env, &sales_key);
+        write_persistent(
+            &env,
+            &sales_key,
+            &add_or_overflow(&env, current_sales, total_price),
+        );
 
         // Update total sales
         let total_sales: u128 = env
@@ -691,11 +768,11 @@ impl NikoProject {
         );
 
         // Update buyer's balance (after the reward settlement above)
-        balances.set(
-            (project_id, buyer.clone()),
-            add_or_overflow(&env, current_balance, amount),
+        write_persistent(
+            &env,
+            &balance_key,
+            &add_or_overflow(&env, current_balance, amount),
         );
-        env.storage().instance().set(&PENDING, &balances);
 
         extend_instance_ttl(&env);
 
@@ -716,7 +793,8 @@ impl NikoProject {
     /// creator may deposit, only while the contract is not paused, and only
     /// once tokens have been minted (otherwise funds would be locked in the
     /// contract with no claimant). The deposited amount is transferred from
-    /// the depositor to the contract via the configured payment token.
+    /// the depositor to the contract via the configured payment token; a
+    /// depositor who cannot pay gets `InsufficientBalance`.
     pub fn deposit_revenue(
         env: Env,
         depositor: Address,
@@ -728,7 +806,7 @@ impl NikoProject {
 
         require_not_paused(&env);
 
-        let (mut projects, mut project) = load_project(&env, project_id);
+        let mut project = load_project(&env, project_id);
 
         require_creator(&env, &project, &depositor);
         require_active(&env, &project);
@@ -747,7 +825,7 @@ impl NikoProject {
         }
 
         // ── Move revenue: depositor -> contract ──
-        token_client(&env).transfer(&depositor, env.current_contract_address(), &deposit);
+        collect_payment(&env, &depositor, deposit);
 
         project.reward_per_token_stored =
             add_or_overflow(&env, project.reward_per_token_stored, reward_increase);
@@ -758,8 +836,7 @@ impl NikoProject {
                 add_or_overflow(&env, project.total_energy_kwh, energy_kwh_delta);
         }
 
-        projects.set(project_id, project);
-        env.storage().instance().set(&PROJECTS, &projects);
+        save_project(&env, project_id, &project);
 
         extend_instance_ttl(&env);
 
@@ -779,15 +856,14 @@ impl NikoProject {
     pub fn update_energy(env: Env, caller: Address, project_id: u64, energy_delta: u128) {
         caller.require_auth();
 
-        let (mut projects, mut project) = load_project(&env, project_id);
+        let mut project = load_project(&env, project_id);
 
         require_creator(&env, &project, &caller);
         require_active(&env, &project);
 
         project.total_energy_kwh = add_or_overflow(&env, project.total_energy_kwh, energy_delta);
         let total = project.total_energy_kwh;
-        projects.set(project_id, project);
-        env.storage().instance().set(&PROJECTS, &projects);
+        save_project(&env, project_id, &project);
 
         extend_instance_ttl(&env);
 
@@ -806,44 +882,31 @@ impl NikoProject {
     /// Claim pending revenue for a project. Pays out the sum of:
     /// - rewards accrued on the investor's current balance since their
     ///   last checkpoint, and
-    /// - any PENDING_CLAIM amount settled earlier (see `purchase_tokens`)
+    /// - any PendingClaim amount settled earlier (see `purchase_tokens`)
     ///   from balance changes that happened before this claim.
     ///
     /// Never blocked by the global pause. State is updated before the
-    /// payout (checks-effects-interactions).
+    /// payout (checks-effects-interactions). A claim of 0 changes nothing.
     pub fn claim_revenue(env: Env, investor: Address, project_id: u64) -> u128 {
         investor.require_auth();
 
-        let (_, project) = load_project(&env, project_id);
+        let project = load_project(&env, project_id);
 
-        let balances: Map<(u64, Address), u128> = env
-            .storage()
-            .instance()
-            .get(&PENDING)
-            .unwrap_or(Map::new(&env));
-        let balance = balances
-            .get((project_id, investor.clone()))
-            .unwrap_or(0);
+        let balance_key = DataKey::Balance(project_id, investor.clone());
+        let paid_key = DataKey::RewardPaid(project_id, investor.clone());
+        let pending_key = DataKey::PendingClaim(project_id, investor.clone());
 
-        let mut reward_paid: Map<(u64, Address), u128> = env
-            .storage()
-            .instance()
-            .get(&REWARD_PAID)
-            .unwrap_or(Map::new(&env));
-        let paid = reward_paid
-            .get((project_id, investor.clone()))
-            .unwrap_or(0);
+        let balance: Option<u128> = env.storage().persistent().get(&balance_key);
+        let paid = read_u128(&env, &paid_key);
 
-        let accrued = accrued_rewards(&env, balance, project.reward_per_token_stored, paid);
+        let accrued = accrued_rewards(
+            &env,
+            balance.unwrap_or(0),
+            project.reward_per_token_stored,
+            paid,
+        );
 
-        let mut pending_claim: Map<(u64, Address), u128> = env
-            .storage()
-            .instance()
-            .get(&PENDING_CLAIM)
-            .unwrap_or(Map::new(&env));
-        let pending = pending_claim
-            .get((project_id, investor.clone()))
-            .unwrap_or(0);
+        let pending = read_u128(&env, &pending_key);
 
         let earned = add_or_overflow(&env, accrued, pending);
 
@@ -853,32 +916,27 @@ impl NikoProject {
 
         let payout = to_token_amount(&env, earned, Error::Overflow);
 
+        // Entries this claim only reads: keep them alive as well.
+        extend_persistent_ttl(&env, &DataKey::Project(project_id));
+        if balance.is_some() {
+            extend_persistent_ttl(&env, &balance_key);
+        }
+
         // Update reward checkpoint
-        reward_paid.set(
-            (project_id, investor.clone()),
-            project.reward_per_token_stored,
-        );
-        env.storage().instance().set(&REWARD_PAID, &reward_paid);
+        write_persistent(&env, &paid_key, &project.reward_per_token_stored);
 
         // Clear any settled pending-claim amount now that it is being paid out
         if pending > 0 {
-            pending_claim.remove((project_id, investor.clone()));
-            env.storage().instance().set(&PENDING_CLAIM, &pending_claim);
+            env.storage().persistent().remove(&pending_key);
         }
 
-        let mut claimed: Map<(u64, Address), u128> = env
-            .storage()
-            .instance()
-            .get(&CLAIMED)
-            .unwrap_or(Map::new(&env));
-        let prev_claimed = claimed
-            .get((project_id, investor.clone()))
-            .unwrap_or(0);
-        claimed.set(
-            (project_id, investor.clone()),
-            add_or_overflow(&env, prev_claimed, earned),
+        let claimed_key = DataKey::Claimed(project_id, investor.clone());
+        let prev_claimed = read_u128(&env, &claimed_key);
+        write_persistent(
+            &env,
+            &claimed_key,
+            &add_or_overflow(&env, prev_claimed, earned),
         );
-        env.storage().instance().set(&CLAIMED, &claimed);
 
         extend_instance_ttl(&env);
 
@@ -904,25 +962,22 @@ impl NikoProject {
     pub fn withdraw_sales(env: Env, caller: Address, project_id: u64, amount: u128) {
         caller.require_auth();
 
-        let (_, project) = load_project(&env, project_id);
+        let project = load_project(&env, project_id);
         require_creator(&env, &project, &caller);
         if amount == 0 {
             panic_with_error!(&env, Error::InvalidAmount);
         }
         let payout = to_token_amount(&env, amount, Error::InvalidAmount);
 
-        let mut sales: Map<u64, u128> = env
-            .storage()
-            .instance()
-            .get(&SALES)
-            .unwrap_or(Map::new(&env));
-        let balance = sales.get(project_id).unwrap_or(0);
+        let sales_key = DataKey::Sales(project_id);
+        let balance = read_u128(&env, &sales_key);
         if amount > balance {
             panic_with_error!(&env, Error::InsufficientBalance);
         }
 
-        sales.set(project_id, sub_or_overflow(&env, balance, amount));
-        env.storage().instance().set(&SALES, &sales);
+        // The project entry is only read here: keep it alive as well.
+        extend_persistent_ttl(&env, &DataKey::Project(project_id));
+        write_persistent(&env, &sales_key, &sub_or_overflow(&env, balance, amount));
 
         let total_sales: u128 = env
             .storage()
@@ -948,111 +1003,40 @@ impl NikoProject {
 
     /// Get project details.
     pub fn get_project(env: Env, project_id: u64) -> Project {
-        let (_, project) = load_project(&env, project_id);
-        project
+        load_project(&env, project_id)
     }
 
     /// Get project name.
     pub fn get_project_name(env: Env, project_id: u64) -> String {
-        let names: Map<u64, String> = env
-            .storage()
-            .instance()
-            .get(&NAMES)
-            .unwrap_or(Map::new(&env));
-        names
-            .get(project_id)
-            .unwrap_or(String::from_str(&env, ""))
+        env.storage()
+            .persistent()
+            .get(&DataKey::Name(project_id))
+            .unwrap_or_else(|| String::from_str(&env, ""))
     }
 
     /// Get sales balance for a project.
     pub fn get_sales_balance(env: Env, project_id: u64) -> u128 {
-        let sales: Map<u64, u128> = env
-            .storage()
-            .instance()
-            .get(&SALES)
-            .unwrap_or(Map::new(&env));
-        sales.get(project_id).unwrap_or(0)
+        read_u128(&env, &DataKey::Sales(project_id))
     }
 
     /// Get claimable amount for an investor. Includes both rewards accrued
-    /// on the current balance and any settled PENDING_CLAIM amount (see
+    /// on the current balance and any settled PendingClaim amount (see
     /// `purchase_tokens` / `claim_revenue`).
     pub fn get_claimable(env: Env, investor: Address, project_id: u64) -> u128 {
-        let (_, project) = load_project(&env, project_id);
-
-        let balances: Map<(u64, Address), u128> = env
-            .storage()
-            .instance()
-            .get(&PENDING)
-            .unwrap_or(Map::new(&env));
-        let balance = balances
-            .get((project_id, investor.clone()))
-            .unwrap_or(0);
-
-        let reward_paid: Map<(u64, Address), u128> = env
-            .storage()
-            .instance()
-            .get(&REWARD_PAID)
-            .unwrap_or(Map::new(&env));
-        let paid = reward_paid
-            .get((project_id, investor.clone()))
-            .unwrap_or(0);
-
-        let accrued = accrued_rewards(&env, balance, project.reward_per_token_stored, paid);
-
-        let pending_claim: Map<(u64, Address), u128> = env
-            .storage()
-            .instance()
-            .get(&PENDING_CLAIM)
-            .unwrap_or(Map::new(&env));
-        let pending = pending_claim
-            .get((project_id, investor))
-            .unwrap_or(0);
-
-        add_or_overflow(&env, accrued, pending)
+        let project = load_project(&env, project_id);
+        let balance = read_u128(&env, &DataKey::Balance(project_id, investor.clone()));
+        claimable_amount(&env, &project, project_id, &investor, balance)
     }
 
     /// Get investor portfolio. Fails with `Overflow` instead of reporting a
     /// wrong (zero) claimable amount.
     pub fn get_portfolio(env: Env, investor: Address, project_ids: Vec<u64>) -> Vec<InvestorPosition> {
-        let projects: Map<u64, Project> = env
-            .storage()
-            .instance()
-            .get(&PROJECTS)
-            .unwrap_or(Map::new(&env));
-        let balances: Map<(u64, Address), u128> = env
-            .storage()
-            .instance()
-            .get(&PENDING)
-            .unwrap_or(Map::new(&env));
-        let claimed: Map<(u64, Address), u128> = env
-            .storage()
-            .instance()
-            .get(&CLAIMED)
-            .unwrap_or(Map::new(&env));
-        let reward_paid: Map<(u64, Address), u128> = env
-            .storage()
-            .instance()
-            .get(&REWARD_PAID)
-            .unwrap_or(Map::new(&env));
-        let pending_claims: Map<(u64, Address), u128> = env
-            .storage()
-            .instance()
-            .get(&PENDING_CLAIM)
-            .unwrap_or(Map::new(&env));
-
         let mut positions = Vec::new(&env);
         for pid in project_ids.iter() {
-            let project = projects
-                .get(pid)
-                .unwrap_or_else(|| panic_with_error!(&env, Error::ProjectNotFound));
-            let balance = balances.get((pid, investor.clone())).unwrap_or(0);
-            let total_claimed = claimed.get((pid, investor.clone())).unwrap_or(0);
-
-            let paid = reward_paid.get((pid, investor.clone())).unwrap_or(0);
-            let accrued = accrued_rewards(&env, balance, project.reward_per_token_stored, paid);
-            let pending = pending_claims.get((pid, investor.clone())).unwrap_or(0);
-            let claimable = add_or_overflow(&env, accrued, pending);
+            let project = load_project(&env, pid);
+            let balance = read_u128(&env, &DataKey::Balance(pid, investor.clone()));
+            let total_claimed = read_u128(&env, &DataKey::Claimed(pid, investor.clone()));
+            let claimable = claimable_amount(&env, &project, pid, &investor, balance);
 
             positions.push_back(InvestorPosition {
                 project_id: pid,
@@ -1066,12 +1050,10 @@ impl NikoProject {
 
     /// Get user's project IDs.
     pub fn get_user_projects(env: Env, user: Address) -> Vec<u64> {
-        let user_projects: Map<Address, Vec<u64>> = env
-            .storage()
-            .instance()
-            .get(&USER_PROJECTS)
-            .unwrap_or(Map::new(&env));
-        user_projects.get(user).unwrap_or(Vec::new(&env))
+        env.storage()
+            .persistent()
+            .get(&DataKey::UserProjects(user))
+            .unwrap_or_else(|| Vec::new(&env))
     }
 
     /// Get next project ID.
@@ -1095,12 +1077,11 @@ impl NikoProject {
     pub fn set_project_status(env: Env, caller: Address, project_id: u64, active: bool) {
         caller.require_auth();
 
-        let (mut projects, mut project) = load_project(&env, project_id);
+        let mut project = load_project(&env, project_id);
         require_creator(&env, &project, &caller);
 
         project.active = active;
-        projects.set(project_id, project);
-        env.storage().instance().set(&PROJECTS, &projects);
+        save_project(&env, project_id, &project);
 
         extend_instance_ttl(&env);
 
@@ -1115,46 +1096,44 @@ impl NikoProject {
     pub fn transfer_ownership(env: Env, caller: Address, project_id: u64, new_creator: Address) {
         caller.require_auth();
 
-        let (mut projects, mut project) = load_project(&env, project_id);
+        let mut project = load_project(&env, project_id);
         require_creator(&env, &project, &caller);
-        if !has_flag(&env, &ISSUERS, &new_creator) {
-            panic_with_error!(&env, Error::NotIssuer);
-        }
+        require_flag(&env, &DataKey::Issuer(new_creator.clone()), Error::NotIssuer);
 
         let old_creator = project.creator.clone();
         project.creator = new_creator.clone();
-        projects.set(project_id, project);
-        env.storage().instance().set(&PROJECTS, &projects);
+        save_project(&env, project_id, &project);
 
-        // Update user_projects mapping
-        let mut user_projects: Map<Address, Vec<u64>> = env
+        // Update user_projects: remove from the old creator. An emptied
+        // list is removed rather than stored (the view reads it as empty).
+        let old_key = DataKey::UserProjects(old_creator);
+        let old_list: Vec<u64> = env
             .storage()
-            .instance()
-            .get(&USER_PROJECTS)
-            .unwrap_or(Map::new(&env));
-
-        // Remove from old creator
-        let old_list = user_projects
-            .get(old_creator.clone())
-            .unwrap_or(Vec::new(&env));
+            .persistent()
+            .get(&old_key)
+            .unwrap_or_else(|| Vec::new(&env));
         let mut new_old_list = Vec::new(&env);
         for pid in old_list.iter() {
             if pid != project_id {
                 new_old_list.push_back(pid);
             }
         }
-        user_projects.set(old_creator, new_old_list);
+        if new_old_list.is_empty() {
+            env.storage().persistent().remove(&old_key);
+        } else {
+            write_persistent(&env, &old_key, &new_old_list);
+        }
 
-        // Add to new creator
-        let mut new_list = user_projects
-            .get(new_creator.clone())
-            .unwrap_or(Vec::new(&env));
+        // Add to the new creator. Read after the write above, so a transfer
+        // to the current creator ends as in v2 (the id moves to the end).
+        let new_key = DataKey::UserProjects(new_creator.clone());
+        let mut new_list: Vec<u64> = env
+            .storage()
+            .persistent()
+            .get(&new_key)
+            .unwrap_or_else(|| Vec::new(&env));
         new_list.push_back(project_id);
-        user_projects.set(new_creator.clone(), new_list);
-
-        env.storage()
-            .instance()
-            .set(&USER_PROJECTS, &user_projects);
+        write_persistent(&env, &new_key, &new_list);
 
         extend_instance_ttl(&env);
 
@@ -1178,12 +1157,13 @@ mod test {
     use soroban_sdk::{
         map,
         testutils::{
-            storage::Instance as _, Address as _, AuthorizedFunction, AuthorizedInvocation,
-            Events as _, Ledger as _,
+            storage::{Instance as _, Persistent as _},
+            Address as _, AuthorizedFunction, AuthorizedInvocation, EnvTestConfig, Events as _,
+            Ledger as _,
         },
         vec,
-        xdr::{ScErrorCode, ScErrorType},
-        Env, Event as _, IntoVal, InvokeError, Val,
+        xdr::{LedgerEntryData, Limits, ScAddress, ScErrorCode, ScErrorType, ScVal, WriteXdr},
+        Env, Event as _, IntoVal, InvokeError, MuxedAddress, Val,
     };
 
     // ----------------------------------------
@@ -1195,7 +1175,11 @@ mod test {
     /// The admin also approves itself as a verified issuer, so the legacy
     /// tests can keep using it as the project creator.
     fn setup() -> (Env, Address, Address, NikoProjectClient<'static>) {
-        let env = Env::default();
+        setup_in(Env::default())
+    }
+
+    /// `setup()` on a given `Env`.
+    fn setup_in(env: Env) -> (Env, Address, Address, NikoProjectClient<'static>) {
         let admin = Address::generate(&env);
         let token_admin = Address::generate(&env);
         let sac = env.register_stellar_asset_contract_v2(token_admin);
@@ -1341,16 +1325,17 @@ mod test {
         );
 
         // Buyer is approved but was never minted any token balance, so the
-        // SAC transfer must fail and the whole purchase must revert.
+        // purchase must fail and the whole purchase must revert.
         //
-        // The SAC's own error propagates unchanged: its BalanceError is
-        // contract code 10, the same number as Error::InsufficientSupply.
-        // A client must not read code 10 from purchase_tokens as "sold out"
-        // without checking the remaining supply.
+        // v2.1 (F-02): the contract checks the balance before the transfer
+        // and fails with its own InsufficientBalance (#11). The SAC's
+        // BalanceError (#10, the same number as InsufficientSupply) no
+        // longer reaches the caller, so #10 from purchase_tokens only means
+        // "sold out".
         let buyer = participant(&env, &admin, &client);
         assert_eq!(
             client.try_purchase_tokens(&buyer, &project_id, &50),
-            Err(Ok(soroban_sdk::Error::from_contract_error(10)))
+            Err(Ok(err(Error::InsufficientBalance)))
         );
         assert_eq!(client.get_project(&project_id).minted, 0);
         assert_eq!(client.get_sales_balance(&project_id), 0);
@@ -1608,6 +1593,7 @@ mod test {
         assert_eq!(Error::NoTokensMinted as u32, 12);
         assert_eq!(Error::Overflow as u32, 13);
         assert_eq!(Error::RewardTooSmall as u32, 14);
+        assert_eq!(Error::InvalidName as u32, 15);
     }
 
     // ----------------------------------------
@@ -2612,5 +2598,507 @@ mod test {
         assert_eq!(project.total_revenue, 27_299);
         assert_eq!(project.total_energy_kwh, 75);
         assert_eq!(token_client.balance(&client.address), 75_303);
+    }
+
+    // ----------------------------------------
+    // v2.1: audit regressions (F-01, F-02, F-03)
+    // ----------------------------------------
+    // Derived from the audit PoCs (`tests/poc_audit.rs` in the audit
+    // worktree), which ran against the deployed v2 wasm. These run against
+    // the source.
+
+    /// Hard per-entry size limit of the network
+    /// (`max_contract_data_entry_size_bytes`).
+    const NETWORK_ENTRY_LIMIT: u32 = 65_536;
+
+    /// Sizes of one contract's ledger entries.
+    struct EntrySizes {
+        /// XDR size of the contract instance entry.
+        instance: u32,
+        /// XDR size of the largest persistent entry.
+        largest_persistent: u32,
+        /// Number of persistent entries.
+        persistent_entries: u32,
+    }
+
+    /// Measure `contract`'s ledger entries the way the audit PoC did: take a
+    /// ledger snapshot and serialize each whole `LedgerEntry` to XDR, the size
+    /// the network checks against `NETWORK_ENTRY_LIMIT`. Unlike the PoC, only
+    /// this contract's entries are counted (not the token's).
+    fn entry_sizes(env: &Env, contract: &Address) -> EntrySizes {
+        let contract = ScAddress::from(contract);
+        let mut sizes = EntrySizes {
+            instance: 0,
+            largest_persistent: 0,
+            persistent_entries: 0,
+        };
+        for (_key, (entry, _ttl)) in env.to_ledger_snapshot().ledger_entries.iter() {
+            if let LedgerEntryData::ContractData(data) = &entry.data {
+                if data.contract != contract {
+                    continue;
+                }
+                let size = entry.as_ref().to_xdr(Limits::none()).unwrap().len() as u32;
+                if data.key == ScVal::LedgerKeyContractInstance {
+                    sizes.instance = size;
+                } else {
+                    sizes.largest_persistent = sizes.largest_persistent.max(size);
+                    sizes.persistent_entries += 1;
+                }
+            }
+        }
+        sizes
+    }
+
+    /// F-01 (audit PoC `poc_instance_entry_supera_limite_de_red`: on v2 the
+    /// instance entry crossed 65_536 bytes with 299 participants and bricked
+    /// every function). 400 approved participants each purchase, with the
+    /// SDK's default mainnet resource limits enforced on every call (the PoC
+    /// had to disable them). The instance entry keeps its size, no entry
+    /// grows with the number of participants, the ledger I/O of the 400th
+    /// purchase equals the 2nd's, and a claim by participant #1 and a
+    /// withdrawal still succeed.
+    ///
+    /// Takes ~30 s: the SDK's per-call cost metering re-encodes every event
+    /// the test host has recorded so far, so the test itself slows down
+    /// quadratically with the number of calls. The contract's per-call cost
+    /// does not (see the ledger I/O check). No snapshot file is written (it
+    /// would be ~3 MB).
+    #[test]
+    fn test_f01_scaling_400_participants() {
+        const PARTICIPANTS: u32 = 400;
+
+        let (env, admin, token_address, client) = setup_in(Env::new_with_config(EnvTestConfig {
+            capture_snapshot_at_drop: false,
+        }));
+        let token_client = token::TokenClient::new(&env, &token_address);
+        let creator = issuer(&env, &admin, &client);
+        let project_id = client.create_project(
+            &creator,
+            &String::from_str(&env, "DoS"),
+            &1_000_000,
+            &100,
+            &1,
+        );
+
+        // Ledger I/O of one purchase: (entries read, entries written, bytes
+        // written). The 1st purchase also creates the project's Sales entry
+        // and the contract's token balance, so the 2nd is the steady state.
+        let purchase_io = || {
+            let r = env.cost_estimate().resources();
+            (
+                r.memory_read_entries + r.disk_read_entries,
+                r.write_entries,
+                r.write_bytes,
+            )
+        };
+
+        let base = entry_sizes(&env, &client.address);
+        let mut first = None;
+        let mut at_100 = None;
+        let mut io_2nd = None;
+        let mut io_last = None;
+        for i in 1..=PARTICIPANTS {
+            let buyer = participant(&env, &admin, &client);
+            mint(&env, &token_address, &buyer, 1_000);
+            client.purchase_tokens(&buyer, &project_id, &1);
+            if i == 2 {
+                io_2nd = Some(purchase_io());
+            }
+            if i == PARTICIPANTS {
+                io_last = Some(purchase_io());
+            }
+            if i == 1 {
+                first = Some(buyer);
+            }
+            if i == 100 {
+                at_100 = Some(entry_sizes(&env, &client.address));
+            }
+        }
+        let first = first.unwrap();
+        let at_100 = at_100.unwrap();
+        let (io_2nd, io_last) = (io_2nd.unwrap(), io_last.unwrap());
+        let after = entry_sizes(&env, &client.address);
+
+        std::eprintln!(
+            "[F-01] instance entry: {} B before any purchase, {} B after 100, {} B after {} participants \
+             (network limit {} B); largest persistent entry: {} B after 100, {} B after {}; \
+             persistent entries: {}; purchase ledger I/O (read entries, written entries, written B): \
+             2nd {:?}, {}th {:?}",
+            base.instance,
+            at_100.instance,
+            after.instance,
+            PARTICIPANTS,
+            NETWORK_ENTRY_LIMIT,
+            at_100.largest_persistent,
+            after.largest_persistent,
+            PARTICIPANTS,
+            after.persistent_entries,
+            io_2nd,
+            PARTICIPANTS,
+            io_last
+        );
+
+        // A purchase touches the same entries, and writes the same bytes, with
+        // 2 or with 400 participants (v2 rewrote the whole instance, which
+        // grew with every participant).
+        assert_eq!(io_last, io_2nd);
+
+        // The instance holds only fixed-size configuration: its size does not
+        // move with the number of participants and stays far below the limit.
+        assert_eq!(at_100.instance, base.instance);
+        assert_eq!(after.instance, base.instance);
+        assert!(after.instance < NETWORK_ENTRY_LIMIT / 32);
+        // No persistent entry grows with the participants either.
+        assert_eq!(after.largest_persistent, at_100.largest_persistent);
+        assert!(after.largest_persistent < NETWORK_ENTRY_LIMIT / 64);
+        // One entry per key: Participant, Balance and RewardPaid per
+        // participant, plus Issuer(admin), Issuer(creator), Project, Name,
+        // Sales and UserProjects(creator).
+        assert_eq!(after.persistent_entries, 3 * PARTICIPANTS + 6);
+
+        assert_eq!(client.get_project(&project_id).minted, u128::from(PARTICIPANTS));
+        assert_eq!(client.get_total_sales(), 100 * u128::from(PARTICIPANTS));
+
+        // The contract keeps working: 400_000 over 400 shares is 1_000 each.
+        mint(&env, &token_address, &creator, 400_000);
+        client.deposit_revenue(&creator, &project_id, &400_000, &0);
+        let first_before = token_client.balance(&first);
+        assert_eq!(client.claim_revenue(&first, &project_id), 1_000);
+        assert_eq!(token_client.balance(&first), first_before + 1_000);
+
+        let creator_before = token_client.balance(&creator);
+        client.withdraw_sales(&creator, &project_id, &40_000);
+        assert_eq!(client.get_sales_balance(&project_id), 0);
+        assert_eq!(client.get_total_sales(), 0);
+        assert_eq!(token_client.balance(&creator), creator_before + 40_000);
+
+        assert_eq!(entry_sizes(&env, &client.address).instance, base.instance);
+    }
+
+    /// F-01 layout: after a full cycle the instance holds only the five
+    /// fixed-size configuration keys. Revoking a participant removes its flag
+    /// entry and leaves its position claimable; a revoked issuer keeps its
+    /// project and can still withdraw its sales.
+    #[test]
+    fn test_f01_instance_holds_only_config_and_revocation_keeps_positions() {
+        let (env, admin, token_address, client) = setup();
+        let has = |key: &DataKey| env.as_contract(&client.address, || env.storage().persistent().has(key));
+        let project_id = solar_lima(&env, &client, &admin);
+        let buyer = participant(&env, &admin, &client);
+        mint(&env, &token_address, &buyer, 1_000_000);
+        mint(&env, &token_address, &admin, 1_000_000);
+        client.purchase_tokens(&buyer, &project_id, &100);
+        client.deposit_revenue(&admin, &project_id, &5_000, &0);
+
+        let instance = env.as_contract(&client.address, || env.storage().instance().all());
+        assert_eq!(instance.len(), 5);
+        for key in [ADMIN, TOKEN, PAUSED, NEXT_ID, TOTAL_SALES] {
+            assert!(instance.contains_key(val(&env, key)));
+        }
+
+        // Revoke the participant: the flag entry goes, the position stays.
+        let flag = DataKey::Participant(buyer.clone());
+        assert!(has(&flag));
+        client.set_participant(&admin, &buyer, &false);
+        assert!(!has(&flag));
+        assert!(!client.is_participant(&buyer));
+        assert!(has(&DataKey::Balance(project_id, buyer.clone())));
+        assert_eq!(client.claim_revenue(&buyer, &project_id), 5_000);
+
+        // Revoke the issuer: its project and sales stay reachable.
+        client.set_issuer(&admin, &admin, &false);
+        assert!(!has(&DataKey::Issuer(admin.clone())));
+        assert_eq!(client.get_user_projects(&admin), vec![&env, project_id]);
+        client.withdraw_sales(&admin, &project_id, &10_000);
+        assert_eq!(client.get_sales_balance(&project_id), 0);
+    }
+
+    /// F-01 TTL: every persistent entry a call writes, or a mutating call
+    /// reads, is extended to PERSISTENT_TTL_EXTEND_TO. Before each call the
+    /// ledger is aged so every entry is below the threshold; a fresh entry
+    /// that was not extended would only have the minimum TTL (4_095 ledgers
+    /// in tests).
+    #[test]
+    fn test_persistent_ttl_extended_on_write() {
+        let (env, admin, token_address, client) = setup();
+        let ttl = |key: &DataKey| {
+            env.as_contract(&client.address, || env.storage().persistent().get_ttl(key))
+        };
+        let has = |key: &DataKey| env.as_contract(&client.address, || env.storage().persistent().has(key));
+        let assert_extended = |keys: &[&DataKey]| {
+            for &key in keys {
+                assert_eq!(ttl(key), PERSISTENT_TTL_EXTEND_TO, "{key:?}");
+            }
+        };
+        let age = || {
+            env.ledger()
+                .set_sequence_number(env.ledger().sequence() + 20_000);
+        };
+
+        // setup() wrote the admin's issuer flag.
+        let admin_flag = DataKey::Issuer(admin.clone());
+        assert_extended(&[&admin_flag]);
+
+        let buyer = participant(&env, &admin, &client);
+        let buyer_flag = DataKey::Participant(buyer.clone());
+        assert_extended(&[&buyer_flag]);
+        mint(&env, &token_address, &buyer, 1_000_000);
+        mint(&env, &token_address, &admin, 1_000_000);
+
+        // create_project writes Project, Name, UserProjects and reads the
+        // creator's issuer flag.
+        age();
+        assert!(ttl(&admin_flag) < PERSISTENT_TTL_THRESHOLD);
+        let project_id = solar_lima(&env, &client, &admin);
+        let project = DataKey::Project(project_id);
+        let name = DataKey::Name(project_id);
+        let sales = DataKey::Sales(project_id);
+        let admin_projects = DataKey::UserProjects(admin.clone());
+        let balance = DataKey::Balance(project_id, buyer.clone());
+        let paid = DataKey::RewardPaid(project_id, buyer.clone());
+        let pending = DataKey::PendingClaim(project_id, buyer.clone());
+        let claimed = DataKey::Claimed(project_id, buyer.clone());
+        assert_extended(&[&project, &name, &admin_projects, &admin_flag]);
+        // Entries the call did not touch keep aging.
+        assert!(ttl(&buyer_flag) < PERSISTENT_TTL_THRESHOLD);
+
+        // purchase_tokens reads the participant flag and writes Project,
+        // Balance, RewardPaid and Sales.
+        age();
+        assert!(ttl(&project) < PERSISTENT_TTL_THRESHOLD);
+        client.purchase_tokens(&buyer, &project_id, &100);
+        assert_extended(&[&buyer_flag, &project, &balance, &paid, &sales]);
+
+        // deposit_revenue writes Project.
+        age();
+        client.deposit_revenue(&admin, &project_id, &10_000, &5);
+        assert_extended(&[&project]);
+        assert!(ttl(&balance) < PERSISTENT_TTL_THRESHOLD);
+
+        // A second purchase also settles the accrued 10_000 into PendingClaim.
+        age();
+        client.purchase_tokens(&buyer, &project_id, &10);
+        assert_extended(&[&buyer_flag, &project, &balance, &paid, &pending, &sales]);
+
+        // claim_revenue only reads Project and Balance, writes RewardPaid and
+        // Claimed, and removes the settled PendingClaim.
+        age();
+        assert!(ttl(&project) < PERSISTENT_TTL_THRESHOLD);
+        assert!(ttl(&balance) < PERSISTENT_TTL_THRESHOLD);
+        assert_eq!(client.claim_revenue(&buyer, &project_id), 10_000);
+        assert_extended(&[&project, &balance, &paid, &claimed]);
+        assert!(!has(&pending));
+
+        // withdraw_sales only reads Project and writes Sales.
+        age();
+        client.withdraw_sales(&admin, &project_id, &1_000);
+        assert_extended(&[&project, &sales]);
+
+        // update_energy and set_project_status write Project.
+        age();
+        client.update_energy(&admin, &project_id, &10);
+        assert_extended(&[&project]);
+        age();
+        client.set_project_status(&admin, &project_id, &false);
+        assert_extended(&[&project]);
+
+        // transfer_ownership reads the new creator's issuer flag and writes
+        // Project and the new creator's list; the emptied old list is removed.
+        let other = issuer(&env, &admin, &client);
+        let other_flag = DataKey::Issuer(other.clone());
+        let other_projects = DataKey::UserProjects(other.clone());
+        age();
+        assert!(ttl(&other_flag) < PERSISTENT_TTL_THRESHOLD);
+        client.transfer_ownership(&admin, &project_id, &other);
+        assert_extended(&[&project, &other_flag, &other_projects]);
+        assert!(!has(&admin_projects));
+        assert_eq!(client.get_user_projects(&admin).len(), 0);
+
+        // set_participant / set_issuer write the flag again.
+        age();
+        client.set_participant(&admin, &buyer, &true);
+        client.set_issuer(&admin, &admin, &true);
+        assert_extended(&[&buyer_flag, &admin_flag]);
+    }
+
+    /// F-03 (audit PoC `poc_nombre_sin_cota_infla_instancia`, which stored a
+    /// 16 KB name): a project name must be 1 to 64 bytes, else InvalidName
+    /// (15). The bound counts UTF-8 bytes, not characters.
+    #[test]
+    fn test_f03_create_project_name_bounds() {
+        let (env, admin, _token_address, client) = setup();
+        let create = |name: &str| {
+            client.try_create_project(&admin, &String::from_str(&env, name), &1000, &100, &10)
+        };
+        let invalid_name = Err(Ok(err(Error::InvalidName)));
+        assert_eq!(err(Error::InvalidName), soroban_sdk::Error::from_contract_error(15));
+
+        // Empty; 65 bytes; the PoC's 16 KB; 33 two-byte characters (66 bytes).
+        for name in [
+            std::string::String::new(),
+            "x".repeat(65),
+            "x".repeat(16_000),
+            "ñ".repeat(33),
+        ] {
+            assert_eq!(create(&name), invalid_name);
+        }
+        assert_eq!(client.next_project_id(), 1);
+
+        // The bounds are accepted: 1 byte, 64 bytes, 32 two-byte characters.
+        for name in [std::string::String::from("x"), "x".repeat(64), "ñ".repeat(32)] {
+            let project_id = create(&name).unwrap().unwrap();
+            assert_eq!(client.get_project_name(&project_id), String::from_str(&env, &name));
+        }
+        assert_eq!(client.next_project_id(), 4);
+    }
+
+    /// F-02 (audit PoC `poc_colision_codigos_error_sac_10`): an approved
+    /// buyer without enough XLM gets InsufficientBalance (#11) from the
+    /// contract, not the SAC's #10, so #10 from purchase_tokens once again
+    /// only means "sold out".
+    #[test]
+    fn test_f02_purchase_without_enough_balance() {
+        let (env, admin, token_address, client) = setup();
+        let token_client = token::TokenClient::new(&env, &token_address);
+        let project_id = solar_lima(&env, &client, &admin);
+
+        // Cause A of the PoC: approved but never funded.
+        let broke = participant(&env, &admin, &client);
+        let no_funds = client.try_purchase_tokens(&broke, &project_id, &50);
+        assert_eq!(no_funds, Err(Ok(err(Error::InsufficientBalance))));
+        assert_ne!(no_funds, Err(Ok(soroban_sdk::Error::from_contract_error(10))));
+
+        // One stroop short of 50 * 100 = 5_000.
+        let short = participant(&env, &admin, &client);
+        mint(&env, &token_address, &short, 4_999);
+        assert_eq!(
+            client.try_purchase_tokens(&short, &project_id, &50),
+            Err(Ok(err(Error::InsufficientBalance)))
+        );
+        assert_eq!(token_client.balance(&short), 4_999);
+        assert_eq!(client.get_project(&project_id).minted, 0);
+        assert_eq!(client.get_sales_balance(&project_id), 0);
+        assert_eq!(client.get_total_sales(), 0);
+
+        // Exactly enough goes through.
+        mint(&env, &token_address, &short, 1);
+        client.purchase_tokens(&short, &project_id, &50);
+        assert_eq!(token_client.balance(&short), 0);
+        assert_eq!(client.get_project(&project_id).minted, 50);
+
+        // Cause B of the PoC: sold out keeps InsufficientSupply (#10).
+        // 50 + 951 > 1_000. The two causes no longer share a code.
+        let rich = participant(&env, &admin, &client);
+        mint(&env, &token_address, &rich, 1_000_000_000);
+        let sold_out = client.try_purchase_tokens(&rich, &project_id, &951);
+        assert_eq!(sold_out, Err(Ok(err(Error::InsufficientSupply))));
+        assert_ne!(no_funds, sold_out);
+    }
+
+    /// F-02: a creator without enough XLM to deposit gets InsufficientBalance
+    /// (#11), and nothing changes.
+    #[test]
+    fn test_f02_deposit_without_enough_balance() {
+        let (env, admin, token_address, client) = setup();
+        let token_client = token::TokenClient::new(&env, &token_address);
+        let project_id = solar_lima(&env, &client, &admin);
+        let buyer = participant(&env, &admin, &client);
+        mint(&env, &token_address, &buyer, 1_000_000);
+        client.purchase_tokens(&buyer, &project_id, &100);
+
+        // The creator holds nothing yet, then one stroop less than 5_000.
+        assert_eq!(
+            client.try_deposit_revenue(&admin, &project_id, &5_000, &10),
+            Err(Ok(err(Error::InsufficientBalance)))
+        );
+        mint(&env, &token_address, &admin, 4_999);
+        assert_eq!(
+            client.try_deposit_revenue(&admin, &project_id, &5_000, &10),
+            Err(Ok(err(Error::InsufficientBalance)))
+        );
+        let project = client.get_project(&project_id);
+        assert_eq!(project.total_revenue, 0);
+        assert_eq!(project.reward_per_token_stored, 0);
+        assert_eq!(project.total_energy_kwh, 0);
+        assert_eq!(client.get_claimable(&buyer, &project_id), 0);
+        assert_eq!(token_client.balance(&admin), 4_999);
+
+        mint(&env, &token_address, &admin, 1);
+        client.deposit_revenue(&admin, &project_id, &5_000, &10);
+        assert_eq!(client.get_claimable(&buyer, &project_id), 5_000);
+        assert_eq!(token_client.balance(&admin), 0);
+    }
+
+    /// Stand-in for the native XLM SAC seen from a Stellar account inside its
+    /// reserve window: `balance()` counts the account's minimum reserve, so
+    /// it reports enough, but `transfer` refuses to spend the reserve and
+    /// fails with the SAC's BalanceError (#10). The failure code is set per
+    /// test; 0 lets transfers through.
+    #[contract]
+    pub struct ReserveWindowToken;
+
+    #[contractimpl]
+    impl ReserveWindowToken {
+        pub fn set_failure(env: Env, code: u32) {
+            env.storage().instance().set(&symbol_short!("FAIL"), &code);
+        }
+
+        pub fn balance(_env: Env, _id: Address) -> i128 {
+            i128::MAX
+        }
+
+        pub fn transfer(env: Env, _from: Address, _to: MuxedAddress, _amount: i128) {
+            let code: u32 = env
+                .storage()
+                .instance()
+                .get(&symbol_short!("FAIL"))
+                .unwrap_or(0);
+            if code != 0 {
+                panic_with_error!(&env, soroban_sdk::Error::from_contract_error(code));
+            }
+        }
+    }
+
+    /// F-02, second layer: when the balance check passes but the token's
+    /// transfer still fails with BalanceError (#10), as in the native XLM
+    /// reserve window, purchases and deposits report InsufficientBalance
+    /// (#11). Other token failures are raised unchanged.
+    #[test]
+    fn test_f02_reserve_window_balance_error_maps_to_insufficient_balance() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let admin = Address::generate(&env);
+        let token_id = env.register(ReserveWindowToken, ());
+        let token = ReserveWindowTokenClient::new(&env, &token_id);
+        let contract_id = env.register(NikoProject, (&admin, &token_id));
+        let client = NikoProjectClient::new(&env, &contract_id);
+        client.set_issuer(&admin, &admin, &true);
+        let project_id = solar_lima(&env, &client, &admin);
+        let buyer = participant(&env, &admin, &client);
+
+        // Transfers succeed.
+        client.purchase_tokens(&buyer, &project_id, &10);
+
+        // BalanceError (#10) after a passing balance check -> #11.
+        token.set_failure(&10);
+        assert_eq!(
+            client.try_purchase_tokens(&buyer, &project_id, &10),
+            Err(Ok(err(Error::InsufficientBalance)))
+        );
+        assert_eq!(
+            client.try_deposit_revenue(&admin, &project_id, &1_000, &0),
+            Err(Ok(err(Error::InsufficientBalance)))
+        );
+        let project = client.get_project(&project_id);
+        assert_eq!(project.minted, 10);
+        assert_eq!(project.total_revenue, 0);
+
+        // Any other failure (13 = TrustlineMissingError on the real SAC) is
+        // not relabeled.
+        token.set_failure(&13);
+        assert_eq!(
+            client.try_purchase_tokens(&buyer, &project_id, &10),
+            Err(Ok(soroban_sdk::Error::from_contract_error(13)))
+        );
     }
 }
