@@ -1028,7 +1028,7 @@ mod test {
         let claimed = client.claim_revenue(&buyer, &project_id);
         assert!(claimed > 0);
         assert_eq!(claimed, claimable);
-        assert_eq!(token_client.balance(&buyer), buyer_before + claimed);
+        assert_eq!(token_client.balance(&buyer), buyer_before + claimed as i128);
     }
 
     /// Regression test: a buyer who purchases AFTER a revenue deposit has
