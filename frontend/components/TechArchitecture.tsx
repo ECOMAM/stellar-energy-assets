@@ -1,5 +1,8 @@
 "use client";
 
+import { useState } from "react";
+import { CONTRACT_ID, EXPLORER_URL } from "@/lib/contract";
+
 const pillars = [
   {
     icon: "sensors",
@@ -22,6 +25,18 @@ const pillars = [
 ];
 
 export default function TechArchitecture() {
+  const [copied, setCopied] = useState(false);
+  const shortContract = `${CONTRACT_ID.slice(0, 6)}...${CONTRACT_ID.slice(-4)}`;
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(CONTRACT_ID);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // fallback
+    }
+  };
+
   return (
     <section id="tech" className="w-full bg-gradient-to-b from-emerald-50/50 to-slate-100/70 border-y border-slate-200 py-16 mt-12">
       <div className="max-w-7xl mx-auto px-5 lg:px-10">
@@ -79,7 +94,7 @@ export default function TechArchitecture() {
                   </span>
                 </div>
                 <span className="font-semibold text-slate-500">
-                  SOROBAN-WASM
+                  DEMO • Testnet • Simulado
                 </span>
               </div>
 
@@ -132,19 +147,52 @@ export default function TechArchitecture() {
                 <div>{"}"}</div>
               </div>
 
-              {/* Hash badge */}
-              <div className="mt-4 p-4 rounded bg-emerald-50/80 border border-emerald-100 flex items-center justify-between text-slate-800">
-                <div className="flex items-center gap-2">
-                  <span className="material-symbols-outlined text-emerald-600 text-[18px]">
+              {/* Contract badge — real testnet ID */}
+              <div className="mt-4 p-4 rounded bg-emerald-50/80 border border-emerald-100 flex items-center justify-between text-slate-800 gap-3">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="material-symbols-outlined text-emerald-600 text-[18px] shrink-0">
                     verified_user
                   </span>
-                  <span className="font-medium text-slate-700">
-                    Stellar Soroban Mainnet Hash:
+                  <span className="font-medium text-slate-700 text-[11px] hidden sm:inline">
+                    Stellar Testnet Contract:
                   </span>
+                  <span className="font-medium text-slate-700 text-[11px] sm:hidden">
+                    Contract:
+                  </span>
+                  <a
+                    href={EXPLORER_URL}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-[11px] text-emerald-700 font-bold truncate hover:underline"
+                    title={CONTRACT_ID}
+                  >
+                    {shortContract}
+                  </a>
                 </div>
-                <span className="text-[12px] text-emerald-700 font-bold">
-                  0x4a9b...f910e
-                </span>
+                <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    onClick={handleCopy}
+                    className="px-2 py-1 rounded border border-emerald-200 bg-white text-emerald-700 text-[11px] font-medium hover:bg-emerald-50 transition-colors flex items-center gap-1"
+                    title="Copiar Contract ID"
+                  >
+                    <span className="material-symbols-outlined text-[14px]">
+                      {copied ? "check" : "content_copy"}
+                    </span>
+                    {copied ? "Copiado" : "Copiar"}
+                  </button>
+                  <a
+                    href={EXPLORER_URL}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="p-1 rounded border border-emerald-200 bg-white text-emerald-700 hover:bg-emerald-50 transition-colors"
+                    title="Ver en stellar.expert"
+                  >
+                    <span className="material-symbols-outlined text-[16px]">open_in_new</span>
+                  </a>
+                </div>
+              </div>
+              <div className="mt-2 text-[10px] font-mono text-slate-500 break-all" title={CONTRACT_ID}>
+                {CONTRACT_ID}
               </div>
             </div>
           </div>
