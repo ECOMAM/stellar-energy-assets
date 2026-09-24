@@ -5,6 +5,8 @@ import { cn } from "@/lib/utils";
 import { useWallet } from "@/lib/WalletContext";
 import { CONTRACT_ID } from "@/lib/contract";
 import PdfCertificate from "@/components/PdfCertificate";
+import ProtocolVerification from "@/components/ProtocolVerification";
+import { useHolderMetrics } from "@/hooks/useHolderMetrics";
 
 /* ── Constants ── */
 type View = "dashboard" | "projects" | "claim" | "metrics" | "admin";
@@ -367,10 +369,13 @@ function DashboardView({
 }) {
   const [claiming, setClaiming] = useState(false);
   const { readContract } = useWallet();
+  const { metrics: holderMetrics } = useHolderMetrics();
   const [chainProjects, setChainProjects] = useState<Record<number, { progress: number; priceXlm: string; minted: bigint; total: bigint } > | null>(null);
   const [isChainLoading, setIsChainLoading] = useState(true);
   const [realClaimable, setRealClaimable] = useState<string | null>(null);
   const [isPortfolioLoading, setIsPortfolioLoading] = useState(false);
+  const [verifyNextId, setVerifyNextId] = useState<number | null>(null);
+  const [verifyMinted, setVerifyMinted] = useState<string | null>(null);
 
   const handleClaimAll = async () => {
     if (!connected || !address) return;
@@ -508,6 +513,17 @@ function DashboardView({
     };
   }, [connected, address, readContract]);
 
+  // Verification panel derived data
+  useEffect(() => {
+    if (!chainProjects) return;
+    const ids = Object.keys(chainProjects).map(Number);
+    const total = Object.values(chainProjects).reduce((acc, v) => acc + v.minted, BigInt(0));
+    // nextProjectId is max id +1, or 1 if none
+    const maxId = ids.length > 0 ? Math.max(...ids) : 0;
+    setVerifyNextId(maxId > 0 ? maxId + 1 : null);
+    setVerifyMinted(total > BigInt(0) ? total.toString() : null);
+  }, [chainProjects]);
+
   const dividendDisplay = connected && realClaimable != null ? `${realClaimable} XLM` : "23.4 XLM";
   const dividendIsDemo = !connected || realClaimable == null;
   const investmentDisplay = "450 XLM";
@@ -562,6 +578,12 @@ function DashboardView({
           demo={dividendIsDemo}
         />
       </div>
+
+      <ProtocolVerification
+        metrics={holderMetrics}
+        nextProjectId={verifyNextId}
+        totalMinted={verifyMinted}
+      />
 
       <section>
         <div className="mb-4 flex items-center justify-between">
