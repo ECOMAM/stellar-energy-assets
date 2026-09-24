@@ -18,15 +18,13 @@ import {
   signTransaction,
 } from "@stellar/freighter-api";
 
-const SERVER_URL =
-  process.env.NEXT_PUBLIC_STELLAR_RPC_URL ||
-  "https://soroban-testnet.stellar.org";
-const PASSPHRASE =
-  process.env.NEXT_PUBLIC_STELLAR_NETWORK_PASSPHRASE ||
-  "Test SDF Network ; September 2015";
-const HORIZON_URL =
-  process.env.NEXT_PUBLIC_STELLAR_HORIZON_URL ||
-  "https://horizon-testnet.stellar.org";
+import {
+  HORIZON_URL,
+  NETWORK_PASSPHRASE as PASSPHRASE,
+  RPC_URL as SERVER_URL,
+} from "./contract";
+import { encodeContractArgs, SIMULATION_SOURCE } from "./soroban";
+
 const XLM_TO_USD = 0.13;
 
 interface WalletState {
@@ -44,8 +42,6 @@ export interface ContractCall {
   method: string;
   args: unknown[];
 }
-
-type SorobanScValType = "address" | "string" | "u64" | "u128";
 
 interface WalletContextType extends WalletState {
   connect: () => Promise<void>;
@@ -156,72 +152,13 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     });
   }, []);
 
-  // ── Shared helper: convert args to ScVal ──
-  // Methods where project_id (index 1) is u64: purchase_tokens, deposit_revenue, claim_revenue,
-  // withdraw_sales, update_energy, get_project, get_project_name, get_sales_balance, get_claimable
-  const u64ProjectMethods = new Set([
-    "purchase_tokens", "deposit_revenue", "claim_revenue", "withdraw_sales",
-    "update_energy", "get_project", "get_project_name", "get_sales_balance",
-    "get_claimable", "set_project_status", "transfer_ownership",
-  ]);
-
-  const toScVals = useCallback(
-    async (args: unknown[], method?: string) => {
-      const sdk = await import("@stellar/stellar-sdk");
-      return args.map((a: unknown, index: number) => {
-        if (Array.isArray(a)) {
-          const isU64Vec = method === "get_portfolio" && index === 1;
-          const innerVals = (a as unknown[]).map((item: unknown) => {
-            if (
-              typeof item === "string" &&
-              /^[GC][A-Z0-9]{55}$/.test(item as string)
-            ) {
-              return sdk.Address.fromString(item as string).toScVal();
-            }
-            if (typeof item === "boolean") {
-              return sdk.nativeToScVal(item, { type: "bool" });
-            }
-            if (typeof item === "bigint" || typeof item === "number") {
-              const t = isU64Vec ? "u64" : "u128";
-              return sdk.nativeToScVal(
-                BigInt((item as number | bigint).toString()),
-                { type: t as "u64" | "u128" }
-              );
-            }
-            if (typeof item === "string") {
-              return sdk.nativeToScVal(item as string, { type: "string" });
-            }
-            return sdk.nativeToScVal(item as unknown);
-          });
-          return sdk.xdr.ScVal.scvVec(innerVals);
-        }
-        if (typeof a === "boolean") {
-          return sdk.nativeToScVal(a, { type: "bool" });
-        }
-        if (typeof a === "string" && /^[GC][A-Z0-9]{55}$/.test(a)) {
-          return sdk.Address.fromString(a).toScVal();
-        }
-
-        if (typeof a === "bigint" || typeof a === "number") {
-          // project_id (index 1) is u64 for most methods
-          const isU64 =
-            index === 1 && method && u64ProjectMethods.has(method);
-
-          if (isU64) {
-            return sdk.nativeToScVal(BigInt(a.toString()), { type: "u64" });
-          }
-
-          return sdk.nativeToScVal(BigInt(a.toString()), { type: "u128" });
-        }
-
-        if (typeof a === "string") {
-          return sdk.nativeToScVal(a, { type: "string" });
-        }
-        return a;
-      });
-    },
-    []
-  );
+  // ── Shared helper: encode args by the v2 signature of `method` ──
+  // (lib/soroban.ts CONTRACT_SIGNATURES: u64 project ids, u128 amounts,
+  // Address, bool, String). Unknown methods or wrong arity throw here.
+  const toScVals = useCallback(async (args: unknown[], method: string) => {
+    const sdk = await import("@stellar/stellar-sdk");
+    return encodeContractArgs(sdk, method, args);
+  }, []);
 
   // ── Shared helper: build, sign, send, poll ──
   const buildSignSendPoll = useCallback(
@@ -297,7 +234,9 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         throw new Error(`Transaction failed on-chain: ${detail}`);
       }
 
-      return { txHash: response.hash, result: result?.result };
+      // `returnValue` is the contract's return ScVal (e.g. the u128 paid by
+      // claim_revenue); decode it with scValToNative.
+      return { txHash: response.hash, result: result?.returnValue ?? result?.result };
     },
     [state.address]
   );
@@ -325,6 +264,13 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   const signAndSendBatch = useCallback(
     async (calls: ContractCall[], signWith?: string) => {
       if (!state.address) throw new Error("Wallet not connected");
+      // Soroban allows exactly one InvokeHostFunction operation per
+      // transaction, so a "batch" can only carry a single contract call.
+      if (calls.length !== 1) {
+        throw new Error(
+          "Soroban solo admite una llamada a contrato por transacción: envía cada llamada por separado"
+        );
+      }
 
       const sdk = await import("@stellar/stellar-sdk");
 
@@ -352,10 +298,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const op = contract.call(method, ...(sorobanArgs as any[]));
-      const source = new sdk.Account(
-        state.address || "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
-        "0"
-      );
+      const source = new sdk.Account(state.address || SIMULATION_SOURCE, "0");
       const tx = new sdk.TransactionBuilder(source, {
         fee: "100",
         networkPassphrase: PASSPHRASE,

@@ -82,7 +82,7 @@ const PHASE_CONFIG = {
   success: {
     icon: "check_circle",
     label: "¡Transacción Confirmada!",
-    sublabel: "Tokens acreditados en tu cuenta",
+    sublabel: "Participación registrada en el contrato",
     btnClass: "bg-emerald-700 text-white",
     showSpinner: false,
   },
@@ -233,13 +233,13 @@ export default function TransactionSigningModal({
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <div className="p-3 bg-white rounded-lg border border-slate-200">
                 <span className="text-[11px] font-semibold text-slate-500 block uppercase tracking-wide">
-                  Fracciones Solicitadas
+                  Participaciones Solicitadas
                 </span>
                 <span className="font-mono text-[16px] font-bold text-slate-900 block mt-0.5">
-                  {tokenCount} Tokens
+                  {tokenCount} {tokenCount === 1 ? "participación" : "participaciones"}
                 </span>
                 <span className="text-[11px] text-emerald-600 font-medium">
-                  ~{capacityWp.toFixed(1)} Wp potencia solar
+                  ~{capacityWp.toFixed(1)} Wp (ilustrativo)
                 </span>
               </div>
               <div className="p-3 bg-white rounded-lg border border-slate-200">
@@ -256,13 +256,13 @@ export default function TransactionSigningModal({
               </div>
               <div className="p-3 bg-white rounded-lg border border-slate-200">
                 <span className="text-[11px] font-semibold text-slate-500 block uppercase tracking-wide">
-                  Precio por Token
+                  Precio por Participación
                 </span>
                 <span className="font-mono text-[16px] font-bold text-emerald-600 block mt-0.5">
                   {(costXlm / tokenCount).toFixed(2)} XLM
                 </span>
                 <span className="text-[11px] text-slate-500">
-                  {tokenCount} {tokenCount === 1 ? "token" : "tokens"}
+                  {tokenCount} {tokenCount === 1 ? "participación" : "participaciones"}
                 </span>
               </div>
             </div>
@@ -322,10 +322,10 @@ export default function TransactionSigningModal({
                 </span>
                 <div className="text-right">
                   <span className="font-mono font-bold text-amber-800">
-                    ~0.0001 XLM
+                    &lt; 0.1 XLM
                   </span>
                   <span className="text-[11px] text-slate-500 ml-1">
-                    (~$0.000013 USD)
+                    (simulada antes de firmar)
                   </span>
                 </div>
               </div>
@@ -347,11 +347,11 @@ export default function TransactionSigningModal({
                   <span className="material-symbols-outlined text-[15px] text-emerald-700">
                     shield_lock
                   </span>
-                  Respaldo Legal RWA
+                  Qué registra el contrato
                 </span>
                 <span className="text-right font-[13px] text-emerald-900 font-medium max-w-[280px]">
-                  Certificado de Usufructo y Garantía Fiduciaria emitido
-                  on-chain a tu cuenta
+                  Tu balance de participaciones en el proyecto (on-chain, no
+                  transferible). Demo sin valor legal.
                 </span>
               </div>
             </div>
@@ -364,12 +364,14 @@ export default function TransactionSigningModal({
             </span>
             <div className="space-y-0.5">
               <h4 className="font-display text-[13px] text-emerald-950 font-bold uppercase tracking-wide">
-                Transacción Protegida Fiduciariamente
+                Qué hace esta firma
               </h4>
               <p className="text-[13px] text-emerald-800 leading-relaxed">
-                Tus fondos no pasan por intermediarios bancarios especulativos:
-                se transfieren de forma atómica al fideicomiso custodiado por La
-                Fiduciaria/BCP y se registran en el oráculo IoT en tiempo real.
+                purchase_tokens transfiere {costXlm.toLocaleString("en-US")} XLM
+                de tu cuenta al contrato Soroban en una sola operación atómica y
+                registra tus participaciones. Los XLM quedan en el contrato hasta
+                que el emisor retire ventas; tus ingresos se reclaman con
+                claim_revenue.
               </p>
             </div>
           </div>
@@ -419,8 +421,9 @@ export default function TransactionSigningModal({
                 </h4>
                 <p className="text-[13px] text-red-700 leading-relaxed">
                   Tu wallet {shortAddr(walletAddress)} tiene {walletBalance} XLM
-                  pero necesitas {costXlm.toLocaleString("en-US")} XLM más el
-                  gas fee (~0.0001 XLM). Recarga tu wallet e intenta de nuevo.
+                  pero necesitas {costXlm.toLocaleString("en-US")} XLM disponibles
+                  más un margen para comisiones y la reserva mínima de la cuenta.
+                  Recarga tu wallet de testnet (Friendbot) e intenta de nuevo.
                 </p>
               </div>
             </div>

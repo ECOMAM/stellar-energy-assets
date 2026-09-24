@@ -1,54 +1,143 @@
 "use client";
 
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useMemo } from "react";
 import { cn } from "@/lib/utils";
 import { useWallet } from "@/lib/WalletContext";
-import { CONTRACT_ID } from "@/lib/contract";
+import { CONTRACT_ID, TX_EXPLORER } from "@/lib/contract";
+import { describeTxError, PARTICIPANT_NOT_APPROVED_MESSAGE } from "@/lib/contractErrors";
+import { getProjectMeta, META_PROJECT_IDS } from "@/lib/projectMeta";
+import { soldPercent, type OnChainProject } from "@/lib/projects";
+import { readContractNative } from "@/lib/soroban";
+import { formatXlm, toBigInt, xlmToStroops, type StroopsLike } from "@/lib/units";
 import PdfCertificate from "@/components/PdfCertificate";
 import ProtocolVerification from "@/components/ProtocolVerification";
 import { useHolderMetrics } from "@/hooks/useHolderMetrics";
+import { useOnChainProjects } from "@/hooks/useOnChainProjects";
+import { useComplianceStatus, type ComplianceStatus } from "@/hooks/useComplianceStatus";
 
 /* ── Constants ── */
 type View = "dashboard" | "projects" | "claim" | "metrics" | "admin";
 
-const projects = [
-  {
-    name: "Solar Lima Norte",
-    location: "Lima, Perú",
-    capacity: "150 kW",
-    tokens: "15",
-    contributed: "150",
-    dividends: "8.2",
-    energy: "45,200",
-    progress: 68,
-    tone: "lime" as const,
-    projectId: 0,
-  },
-  {
-    name: "Solar Arequipa",
-    location: "Arequipa, Perú",
-    capacity: "320 kW",
-    tokens: "20",
-    contributed: "200",
-    dividends: "12.1",
-    energy: "82,640",
-    progress: 84,
-    tone: "orange" as const,
-    projectId: 1,
-  },
-  {
-    name: "Solar San Martín",
-    location: "Tarapoto, Perú",
-    capacity: "90 kW",
-    tokens: "10",
-    contributed: "100",
-    dividends: "3.1",
-    energy: "26,880",
-    progress: 42,
-    tone: "amber" as const,
-    projectId: 2,
-  },
-];
+type Tone = "lime" | "orange" | "amber";
+const TONES: Record<number, Tone> = { 1: "orange", 2: "lime", 3: "amber" };
+
+/** One project as the dashboard shows it: on-chain numbers + off-chain demo metadata. */
+type DisplayProject = {
+  id: number;
+  name: string;
+  location: string;
+  capacity: string;
+  creator: string | null;
+  totalSupply: bigint;
+  minted: bigint;
+  price: bigint; // stroops per participation
+  energyKwh: bigint;
+  totalRevenue: bigint; // stroops
+  active: boolean;
+  progress: number;
+  tone: Tone;
+  /** true = fallback metadata (chain unreachable), always labelled DEMO */
+  isDemo: boolean;
+};
+
+function fromChain(p: OnChainProject): DisplayProject {
+  const meta = getProjectMeta(p.id);
+  return {
+    id: p.id,
+    name: p.name || meta.fallback.name,
+    location: meta.location,
+    capacity: meta.capacity,
+    creator: p.creator,
+    totalSupply: p.totalSupply,
+    minted: p.minted,
+    price: p.price,
+    energyKwh: p.totalEnergyKwh,
+    totalRevenue: p.totalRevenue,
+    active: p.active,
+    progress: soldPercent(p),
+    tone: TONES[p.id] ?? "lime",
+    isDemo: false,
+  };
+}
+
+function demoProjects(): DisplayProject[] {
+  return META_PROJECT_IDS.map((id) => {
+    const meta = getProjectMeta(id);
+    const f = meta.fallback;
+    return {
+      id,
+      name: f.name,
+      location: meta.location,
+      capacity: meta.capacity,
+      creator: null,
+      totalSupply: f.totalSupply,
+      minted: f.minted,
+      price: f.price,
+      energyKwh: BigInt(0),
+      totalRevenue: BigInt(0),
+      active: true,
+      progress: soldPercent(f),
+      tone: TONES[id] ?? "lime",
+      isDemo: true,
+    };
+  });
+}
+
+/** On-chain projects, or the labelled DEMO fallback while loading / if the RPC fails. */
+function useDisplayProjects() {
+  const { projects, loading, reload } = useOnChainProjects();
+  const display = useMemo(() => (projects ? projects.map(fromChain) : demoProjects()), [projects]);
+  return { projects: display, onChain: projects, loading, reload };
+}
+
+type Position = { balance: bigint; claimable: bigint; claimed: bigint };
+
+function big(v: unknown): bigint {
+  try {
+    return v === undefined || v === null ? BigInt(0) : toBigInt(v as StroopsLike);
+  } catch {
+    return BigInt(0);
+  }
+}
+
+/** get_portfolio(address, ids) -> Map<projectId, Position>. null while unknown. */
+function usePortfolio(address: string | null | undefined, ids: number[]) {
+  const [positions, setPositions] = useState<Map<number, Position> | null>(null);
+  const [loading, setLoading] = useState(false);
+  const key = ids.join(",");
+
+  const reload = useCallback(async () => {
+    const list = key ? key.split(",").map(Number) : [];
+    if (!address || list.length === 0) {
+      setPositions(null);
+      return;
+    }
+    setLoading(true);
+    try {
+      const raw = await readContractNative<Array<Record<string, unknown>>>("get_portfolio", [address, list]);
+      const map = new Map<number, Position>();
+      for (const p of Array.isArray(raw) ? raw : []) {
+        map.set(Number(big(p.project_id)), {
+          balance: big(p.token_balance),
+          claimable: big(p.claimable_amount),
+          claimed: big(p.total_claimed),
+        });
+      }
+      setPositions(map);
+    } catch (e) {
+      console.warn("get_portfolio failed", e);
+      setPositions(null);
+    } finally {
+      setLoading(false);
+    }
+  }, [address, key]);
+
+  useEffect(() => {
+    void reload();
+  }, [reload]);
+
+  return { positions, loading, reload };
+}
 
 const nav = [
   { id: "dashboard" as const, label: "Dashboard", icon: "home" },
@@ -92,7 +181,7 @@ function MiniChart({ orange = false }: { orange?: boolean }) {
       viewBox="0 0 180 56"
       className="h-14 w-full"
       preserveAspectRatio="none"
-      aria-label="Revenue trend chart"
+      aria-label="Gráfico ilustrativo (demo)"
     >
       <path
         d="M0 47 C20 46 18 33 38 36 S52 43 69 29 S86 33 101 20 S119 28 133 13 S154 20 180 4"
@@ -119,6 +208,48 @@ function MiniChart({ orange = false }: { orange?: boolean }) {
   );
 }
 
+function DemoBadge({ className }: { className?: string }) {
+  return (
+    <span
+      className={cn(
+        "px-1 py-0.5 rounded bg-amber-50 border border-amber-200 text-amber-700 text-[9px] font-mono font-bold",
+        className
+      )}
+    >
+      DEMO
+    </span>
+  );
+}
+
+function Notice({ tone, children }: { tone: "error" | "success" | "info" | "warn"; children: React.ReactNode }) {
+  const styles = {
+    error: "bg-red-50 border-red-200 text-red-700",
+    success: "bg-emerald-50 border-emerald-200 text-emerald-800",
+    info: "bg-slate-50 border-slate-200 text-slate-700",
+    warn: "bg-amber-50 border-amber-200 text-amber-800",
+  }[tone];
+  const icon = { error: "error", success: "check_circle", info: "info", warn: "warning" }[tone];
+  return (
+    <div className={cn("flex items-start gap-2 rounded-lg border px-3 py-2 text-xs leading-relaxed", styles)}>
+      <span className="material-symbols-outlined text-[16px] shrink-0">{icon}</span>
+      <div className="min-w-0 break-words">{children}</div>
+    </div>
+  );
+}
+
+function TxLink({ hash }: { hash: string }) {
+  return (
+    <a
+      href={TX_EXPLORER(hash)}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="font-mono font-semibold underline"
+    >
+      {hash.slice(0, 10)}…
+    </a>
+  );
+}
+
 function StatCard({
   icon,
   label,
@@ -126,6 +257,7 @@ function StatCard({
   change,
   action,
   onAction,
+  actionDisabled,
   demo,
 }: {
   icon: string;
@@ -134,6 +266,7 @@ function StatCard({
   change?: string;
   action?: string;
   onAction?: () => void;
+  actionDisabled?: boolean;
   demo?: boolean;
 }) {
   return (
@@ -153,7 +286,8 @@ function StatCard({
         {action && (
           <button
             onClick={onAction}
-            className="h-7 bg-orange-600 hover:bg-orange-700 px-2.5 rounded-lg text-xs text-white font-semibold transition-colors"
+            disabled={actionDisabled}
+            className="h-7 bg-orange-600 hover:bg-orange-700 px-2.5 rounded-lg text-xs text-white font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {action}
           </button>
@@ -248,19 +382,13 @@ function Sidebar({
 function ProjectCard({
   project,
   onSelect,
-  realProgress,
-  realPrice,
   isLoading,
 }: {
-  project: (typeof projects)[number];
+  project: DisplayProject;
   onSelect: () => void;
-  realProgress?: number | null;
-  realPrice?: string | null;
   isLoading?: boolean;
 }) {
-  const displayProgress = realProgress != null ? realProgress : project.progress;
-  const displayPrice = realPrice != null ? realPrice : "10 XLM";
-  const isDemo = realProgress == null && !isLoading;
+  const isDemo = project.isDemo && !isLoading;
   return (
     <button
       onClick={onSelect}
@@ -291,31 +419,40 @@ function ProjectCard({
                 arrow_upward
               </span>
             </div>
-            <div className="text-xs text-slate-500">{project.location}</div>
+            <div className="text-xs text-slate-500">
+              {project.location} · id {project.id}
+            </div>
           </div>
-          <span className="rounded-full bg-emerald-50 px-2 py-1 text-[10px] font-medium text-emerald-700 border border-emerald-200">
-            Activo
+          <span
+            className={cn(
+              "rounded-full px-2 py-1 text-[10px] font-medium border",
+              project.active
+                ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                : "bg-slate-100 text-slate-500 border-slate-200"
+            )}
+          >
+            {project.active ? "Activo" : "Inactivo"}
           </span>
         </div>
         <div className="mb-5 grid grid-cols-2 gap-4">
           <div>
-            <div className="text-[11px] text-slate-500">Capacidad</div>
+            <div className="text-[11px] text-slate-500">Capacidad (demo)</div>
             <div className="mt-1 font-mono text-sm text-slate-700">
               {project.capacity}
             </div>
           </div>
           <div>
-            <div className="text-[11px] text-slate-500">Energía generada</div>
-            <div className="mt-1 font-mono text-sm text-emerald-600">
-              {project.energy} kWh
+            <div className="text-[11px] text-slate-500">Energía reportada</div>
+            <div className="mt-1 font-mono text-sm text-emerald-600" title="kWh reportados por el emisor y anclados on-chain (update_energy / deposit_revenue)">
+              {isDemo ? "—" : `${project.energyKwh.toLocaleString("en-US")} kWh`}
             </div>
           </div>
         </div>
         <MiniChart orange={project.tone === "orange"} />
         <div className="mt-4 flex items-center justify-between text-xs">
-          <span className="text-slate-500">Tokens vendidos</span>
-          <span className="font-mono text-slate-600" title={isDemo ? "Valor demo — conectando a testnet" : "Valor on-chain: minted/total_supply"}>
-            {isLoading ? "…" : `${displayProgress}%`}
+          <span className="text-slate-500">Participaciones vendidas</span>
+          <span className="font-mono text-slate-600" title={isDemo ? "Valor demo: sin conexión a testnet" : "On-chain: minted / total_supply"}>
+            {isLoading ? "…" : `${project.minted.toString()} / ${project.totalSupply.toString()} (${project.progress}%)`}
           </span>
         </div>
         <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-slate-100">
@@ -324,13 +461,13 @@ function ProjectCard({
               "h-full rounded-full",
               project.tone === "orange" ? "bg-orange-500" : "bg-emerald-500"
             )}
-            style={{ width: `${displayProgress}%` }}
+            style={{ width: `${project.progress}%` }}
           />
         </div>
         <div className="mt-5 flex items-center justify-between">
-          <span className="font-mono text-sm text-slate-900" title={isDemo ? "Precio demo — on-chain fallback 10 XLM" : `Precio on-chain: ${displayPrice} stroops→XLM`}>
-            {displayPrice}{" "}
-            <span className="font-sans text-xs text-slate-500">/ token</span>
+          <span className="font-mono text-sm text-slate-900" title={isDemo ? "Precio demo" : `Precio on-chain: ${project.price.toString()} stroops`}>
+            {formatXlm(project.price)} XLM{" "}
+            <span className="font-sans text-xs text-slate-500">/ participación</span>
           </span>
           <span className="text-xs text-emerald-600">
             Ver detalle{" "}
@@ -342,6 +479,56 @@ function ProjectCard({
       </div>
     </button>
   );
+}
+
+function ParticipantStatus({ connected, compliance }: { connected: boolean; compliance: ComplianceStatus }) {
+  if (!connected) {
+    return <Notice tone="info">Conecta tu wallet para ver si tu cuenta está aprobada como participante.</Notice>;
+  }
+  return (
+    <div className="flex flex-col gap-2">
+      {compliance.paused === true && (
+        <Notice tone="warn">
+          El contrato está en pausa: las compras y los depósitos de ingresos están bloqueados. Los reclamos siguen disponibles.
+        </Notice>
+      )}
+      {compliance.isParticipant === true && (
+        <Notice tone="success">
+          Cuenta aprobada como participante (KYC simulado para esta demo, <span className="font-mono">is_participant = true</span>).
+        </Notice>
+      )}
+      {compliance.isParticipant === false && <Notice tone="warn">{PARTICIPANT_NOT_APPROVED_MESSAGE}</Notice>}
+      {compliance.isParticipant === null && !compliance.loading && (
+        <Notice tone="info">No se pudo leer el estado de participante desde testnet.</Notice>
+      )}
+    </div>
+  );
+}
+
+/** Sequentially claim every project with claimable > 0 (one Freighter signature each). */
+async function claimProjects(
+  signAndSend: (contractId: string, method: string, args: unknown[]) => Promise<{ txHash: string; result?: unknown }>,
+  address: string,
+  ids: number[]
+): Promise<{ hashes: string[]; claimed: bigint; error: string | null }> {
+  const sdk = await import("@stellar/stellar-sdk");
+  const hashes: string[] = [];
+  let claimed = BigInt(0);
+  for (const id of ids) {
+    try {
+      // contract: claim_revenue(address: Address, project_id: u64) -> u128
+      const { txHash, result } = await signAndSend(CONTRACT_ID, "claim_revenue", [address, id]);
+      hashes.push(txHash);
+      try {
+        if (result) claimed += big(sdk.scValToNative(result as never));
+      } catch {
+        // amount unknown; the tx link is still shown
+      }
+    } catch (e) {
+      return { hashes, claimed, error: describeTxError(e, { method: "claim_revenue" }) };
+    }
+  }
+  return { hashes, claimed, error: null };
 }
 
 /* ── View Sections ── */
@@ -362,166 +549,46 @@ function DashboardView({
   address?: string | null;
 }) {
   const [claiming, setClaiming] = useState(false);
-  const { readContract } = useWallet();
+  const [claimMsg, setClaimMsg] = useState<{ tone: "error" | "success"; text: string; hashes: string[] } | null>(null);
   const { metrics: holderMetrics } = useHolderMetrics();
-  const [chainProjects, setChainProjects] = useState<Record<number, { progress: number; priceXlm: string; minted: bigint; total: bigint } > | null>(null);
-  const [isChainLoading, setIsChainLoading] = useState(true);
-  const [realClaimable, setRealClaimable] = useState<string | null>(null);
-  const [isPortfolioLoading, setIsPortfolioLoading] = useState(false);
-  const [verifyNextId, setVerifyNextId] = useState<number | null>(null);
-  const [verifyMinted, setVerifyMinted] = useState<string | null>(null);
+  const { projects, onChain, loading: isChainLoading } = useDisplayProjects();
+  const ids = useMemo(() => (onChain ?? []).map((p) => p.id), [onChain]);
+  const { positions, loading: isPortfolioLoading, reload: reloadPortfolio } = usePortfolio(
+    connected ? address : null,
+    ids
+  );
+  const compliance = useComplianceStatus(connected ? address : null);
+
+  const isReal = connected && !!onChain && !!positions;
+  const byId = useMemo(() => new Map(projects.map((p) => [p.id, p])), [projects]);
+  let tokens = BigInt(0);
+  let contributed = BigInt(0);
+  let claimable = BigInt(0);
+  const claimableIds: number[] = [];
+  positions?.forEach((pos, id) => {
+    tokens += pos.balance;
+    contributed += pos.balance * (byId.get(id)?.price ?? BigInt(0));
+    claimable += pos.claimable;
+    if (pos.claimable > BigInt(0)) claimableIds.push(id);
+  });
+  const heldIn = positions ? Array.from(positions.values()).filter((p) => p.balance > BigInt(0)).length : 0;
 
   const handleClaimAll = async () => {
-    if (!connected || !address) return;
+    if (!connected || !address || claimableIds.length === 0) return;
     setClaiming(true);
-    try {
-      // contract: claim_revenue(address: Address, project_id: u64) — IDs start at 1
-      await signAndSend(CONTRACT_ID, "claim_revenue", [address, 1]);
-    } catch (e) {
-      console.error("Claim failed:", e);
-    } finally {
-      setClaiming(false);
-    }
+    setClaimMsg(null);
+    const r = await claimProjects(signAndSend, address, claimableIds);
+    setClaimMsg(
+      r.error
+        ? { tone: "error", text: r.error, hashes: r.hashes }
+        : { tone: "success", text: `Reclamaste ${formatXlm(r.claimed)} XLM.`, hashes: r.hashes }
+    );
+    await reloadPortfolio();
+    setClaiming(false);
   };
 
-  // Fetch on-chain project data: next_project_id + get_project loop
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const sdk = await import("@stellar/stellar-sdk");
-        const decode = (val: unknown) => {
-          try {
-            return (sdk as unknown as { scValToNative: (v: unknown) => unknown }).scValToNative(val as never);
-          } catch {
-            return val;
-          }
-        };
-        let nextId = 1;
-        try {
-          const rawNext = await readContract(CONTRACT_ID, "next_project_id", []);
-          const decoded = decode(rawNext);
-          if (typeof decoded === "bigint") nextId = Number(decoded);
-          else if (typeof decoded === "number") nextId = decoded;
-          else if (decoded != null) nextId = Number(decoded as string);
-        } catch (e) {
-          console.warn("next_project_id failed, using fallback", e);
-          nextId = 4; // fallback to try 1..3
-        }
-        const ids = [];
-        for (let i = 1; i < nextId; i++) ids.push(i);
-        // limit to 3 for UI, but if nextId is 1 (no project yet) fallback to 1..3 to show demo gracefully
-        const fetchIds = ids.length > 0 ? ids.slice(0, 3) : [1, 2, 3];
-        const results = await Promise.all(
-          fetchIds.map(async (id) => {
-            try {
-              const raw = await readContract(CONTRACT_ID, "get_project", [id]);
-              const p = decode(raw) as Record<string, unknown>;
-              const total = BigInt((p.total_supply ?? p.totalSupply ?? 0) as string | number | bigint);
-              const minted = BigInt((p.minted ?? 0) as string | number | bigint);
-              const price = BigInt((p.price ?? 0) as string | number | bigint);
-              const progress = total > BigInt(0) ? Number((minted * BigInt(100)) / total) : 0;
-              const priceXlm = (Number(price) / 1_000_000).toLocaleString("en-US", { maximumFractionDigits: 2 }) + " XLM";
-              return { id, progress, priceXlm, minted, total };
-            } catch (e) {
-              console.warn(`get_project(${id}) failed, keeping mock`, e);
-              return null;
-            }
-          })
-        );
-        if (cancelled) return;
-        const map: Record<number, { progress: number; priceXlm: string; minted: bigint; total: bigint }> = {};
-        results.forEach((r) => {
-          if (r) map[r.id] = r;
-        });
-        if (Object.keys(map).length > 0) setChainProjects(map);
-      } catch (e) {
-        console.warn("chain projects fetch failed", e);
-      } finally {
-        if (!cancelled) setIsChainLoading(false);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [readContract]);
-
-  // Fetch real dividends via get_portfolio or get_claimable
-  useEffect(() => {
-    if (!connected || !address) {
-      setRealClaimable(null);
-      return;
-    }
-    let cancelled = false;
-    setIsPortfolioLoading(true);
-    (async () => {
-      try {
-        const sdk = await import("@stellar/stellar-sdk");
-        const decode = (val: unknown) => {
-          try {
-            return (sdk as unknown as { scValToNative: (v: unknown) => unknown }).scValToNative(val as never);
-          } catch {
-            return val;
-          }
-        };
-        // Try get_portfolio for [1,2,3]
-        let totalClaimable = BigInt(0);
-        try {
-          const raw = await readContract(CONTRACT_ID, "get_portfolio", [address, [1, 2, 3]]);
-          const positions = decode(raw) as Array<Record<string, unknown>>;
-          if (Array.isArray(positions)) {
-            for (const pos of positions) {
-              const amt = BigInt((pos.claimable_amount ?? pos.claimableAmount ?? 0) as string | number | bigint);
-              totalClaimable += amt;
-            }
-          }
-        } catch {
-          // fallback: per-project get_claimable
-          const ids = [1, 2, 3];
-          for (const pid of ids) {
-            try {
-              const raw = await readContract(CONTRACT_ID, "get_claimable", [address, pid]);
-              const val = decode(raw);
-              totalClaimable += BigInt(val as string | number | bigint);
-            } catch (e) {
-              console.warn(`get_claimable ${pid} failed`, e);
-            }
-          }
-        }
-        if (!cancelled) {
-          if (totalClaimable > BigInt(0)) {
-            const xlm = Number(totalClaimable) / 1_000_000;
-            setRealClaimable(xlm.toLocaleString("en-US", { maximumFractionDigits: 2 }));
-          } else {
-            setRealClaimable("0.00");
-          }
-        }
-      } catch (e) {
-        console.warn("portfolio fetch failed", e);
-      } finally {
-        if (!cancelled) setIsPortfolioLoading(false);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [connected, address, readContract]);
-
-  // Verification panel derived data
-  useEffect(() => {
-    if (!chainProjects) return;
-    const ids = Object.keys(chainProjects).map(Number);
-    const total = Object.values(chainProjects).reduce((acc, v) => acc + v.minted, BigInt(0));
-    // nextProjectId is max id +1, or 1 if none
-    const maxId = ids.length > 0 ? Math.max(...ids) : 0;
-    setVerifyNextId(maxId > 0 ? maxId + 1 : null);
-    setVerifyMinted(total > BigInt(0) ? total.toString() : null);
-  }, [chainProjects]);
-
-  const dividendDisplay = connected && realClaimable != null ? `${realClaimable} XLM` : "23.4 XLM";
-  const dividendIsDemo = !connected || realClaimable == null;
-  const participationDisplay = "450 XLM";
-  const tokensDisplay = "45";
+  const totalMinted = onChain ? onChain.reduce((acc, p) => acc + p.minted, BigInt(0)) : null;
+  const nextProjectId = onChain ? (onChain.length > 0 ? Math.max(...onChain.map((p) => p.id)) + 1 : 1) : null;
 
   return (
     <div className="flex flex-col gap-7">
@@ -534,7 +601,7 @@ function DashboardView({
             Buenos días, participante
           </h1>
           <p className="mt-2 text-sm text-slate-500">
-            Tu portafolio está generando energía limpia hoy.
+            Tus participaciones en proyectos solares demo registrados en Stellar testnet.
           </p>
         </div>
         <button
@@ -548,34 +615,47 @@ function DashboardView({
         </button>
       </div>
 
+      <ParticipantStatus connected={connected} compliance={compliance} />
+
       <div className="grid gap-4 md:grid-cols-3">
         <StatCard
           icon="payments"
-          label="Mi participación"
-          value={participationDisplay}
-          demo={dividendIsDemo}
+          label="Mi participación (XLM aportados)"
+          value={isReal ? `${formatXlm(contributed)} XLM` : "450 XLM"}
+          demo={!isReal}
         />
         <StatCard
           icon="bolt"
           label="Ingresos pendientes"
-          value={isPortfolioLoading ? "…" : dividendDisplay}
-          action="Reclamar todo"
+          value={isPortfolioLoading ? "…" : isReal ? `${formatXlm(claimable)} XLM` : "23.4 XLM"}
+          action={claiming ? "Reclamando…" : "Reclamar todo"}
           onAction={handleClaimAll}
-          demo={dividendIsDemo}
+          actionDisabled={!isReal || claiming || claimableIds.length === 0}
+          demo={!isReal}
         />
         <StatCard
           icon="eco"
-          label="Tokens en posesión"
-          value={tokensDisplay}
-          change="En 3 proyectos"
-          demo={dividendIsDemo}
+          label="Participaciones en posesión"
+          value={isReal ? tokens.toString() : "45"}
+          change={isReal ? `En ${heldIn} proyecto${heldIn === 1 ? "" : "s"}` : "En 3 proyectos"}
+          demo={!isReal}
         />
       </div>
+      {claimMsg && (
+        <Notice tone={claimMsg.tone}>
+          {claimMsg.text}{" "}
+          {claimMsg.hashes.map((h) => (
+            <span key={h} className="mr-2">
+              <TxLink hash={h} />
+            </span>
+          ))}
+        </Notice>
+      )}
 
       <ProtocolVerification
         metrics={holderMetrics}
-        nextProjectId={verifyNextId}
-        totalMinted={verifyMinted}
+        nextProjectId={nextProjectId}
+        totalMinted={totalMinted != null ? totalMinted.toString() : null}
       />
 
       <section>
@@ -585,7 +665,7 @@ function DashboardView({
               Proyectos destacados
             </h2>
             <p className="mt-1 text-xs text-slate-500">
-              Activos solares con datos on-chain en tiempo real
+              Nombre y cifras leídos del contrato; ubicación y capacidad son datos demo
             </p>
           </div>
           <button
@@ -599,20 +679,14 @@ function DashboardView({
           </button>
         </div>
         <div className="grid gap-4 lg:grid-cols-3">
-          {projects.map((p, idx) => {
-            const chainId = idx + 1;
-            const chain = chainProjects?.[chainId];
-            return (
-              <ProjectCard
-                key={p.name}
-                project={p}
-                onSelect={() => setView("projects")}
-                realProgress={chain?.progress ?? null}
-                realPrice={chain?.priceXlm ?? null}
-                isLoading={isChainLoading}
-              />
-            );
-          })}
+          {projects.slice(0, 3).map((p) => (
+            <ProjectCard
+              key={p.id}
+              project={p}
+              onSelect={() => setView("projects")}
+              isLoading={isChainLoading}
+            />
+          ))}
         </div>
       </section>
 
@@ -625,68 +699,60 @@ function DashboardView({
                 Mis proyectos
               </h2>
               <p className="mt-1 text-xs text-slate-500">
-                Ingresos de tus activos
+                {isReal ? "Posiciones on-chain (get_portfolio)" : "Conecta tu wallet para ver tus posiciones reales"}
               </p>
             </div>
-            <button className="text-slate-400 hover:text-slate-600">
-              <span className="material-symbols-outlined text-[20px]">
-                more_horiz
-              </span>
-            </button>
+            {!isReal && <DemoBadge />}
           </div>
           <div className="overflow-x-auto">
             <table className="w-full min-w-[600px] text-left text-xs">
               <thead className="border-b border-slate-200 text-slate-500">
                 <tr>
                   <th className="pb-3 font-medium">Proyecto</th>
-                  <th className="pb-3 font-medium">Tokens</th>
-                  <th className="pb-3 font-medium">Participación</th>
-                  <th className="pb-3 font-medium">Ingresos</th>
+                  <th className="pb-3 font-medium">Participaciones</th>
+                  <th className="pb-3 font-medium">Aportado</th>
+                  <th className="pb-3 font-medium">Ingresos por reclamar</th>
                   <th className="pb-3 font-medium">Estado</th>
                 </tr>
               </thead>
               <tbody>
-                {projects.map((p) => (
-                  <tr
-                    key={p.name}
-                    className="border-b border-slate-100"
-                  >
-                    <td className="py-4 font-medium text-slate-700">
-                      {p.name}
-                    </td>
-                    <td className="py-4 font-mono text-slate-600">
-                      {p.tokens}
-                    </td>
-                    <td className="py-4 font-mono text-slate-600">
-                      {p.contributed} XLM
-                    </td>
-                    <td className="py-4 font-mono text-emerald-600">
-                      {p.dividends} XLM {dividendIsDemo && <span className="ml-1 px-1 py-0.5 rounded bg-amber-50 border border-amber-200 text-amber-700 text-[9px]">DEMO</span>}
-                    </td>
-                    <td className="py-4">
-                      <span className="text-emerald-600 flex items-center gap-1">
-                        <span className="material-symbols-outlined text-[14px]">
-                          check
-                        </span>{" "}
-                        Activo
-                      </span>
-                    </td>
-                  </tr>
-                ))}
+                {projects.map((p) => {
+                  const pos = positions?.get(p.id);
+                  return (
+                    <tr key={p.id} className="border-b border-slate-100">
+                      <td className="py-4 font-medium text-slate-700">{p.name}</td>
+                      <td className="py-4 font-mono text-slate-600">
+                        {isReal ? (pos?.balance ?? BigInt(0)).toString() : "—"}
+                      </td>
+                      <td className="py-4 font-mono text-slate-600">
+                        {isReal ? `${formatXlm((pos?.balance ?? BigInt(0)) * p.price)} XLM` : "—"}
+                      </td>
+                      <td className="py-4 font-mono text-emerald-600">
+                        {isReal ? `${formatXlm(pos?.claimable ?? BigInt(0))} XLM` : "—"}
+                      </td>
+                      <td className="py-4">
+                        <span className={cn("flex items-center gap-1", p.active ? "text-emerald-600" : "text-slate-500")}>
+                          <span className="material-symbols-outlined text-[14px]">
+                            {p.active ? "check" : "pause"}
+                          </span>{" "}
+                          {p.active ? "Activo" : "Inactivo"}
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
         </div>
 
-        {/* Activity */}
+        {/* Activity (illustrative) */}
         <div className="bg-white border border-slate-200 rounded-xl shadow-md p-5">
           <div className="mb-5 flex items-center justify-between">
             <h2 className="font-semibold text-slate-900 font-display">
               Actividad reciente
             </h2>
-            <span className="material-symbols-outlined text-[16px] text-slate-400">
-              assignment
-            </span>
+            <DemoBadge />
           </div>
           <div className="flex flex-col gap-5 text-xs">
             <div className="flex gap-3">
@@ -697,11 +763,9 @@ function DashboardView({
               </div>
               <div>
                 <p className="leading-5 text-slate-600">
-                  Recibiste{" "}
-                  <b className="text-emerald-700">2.1 XLM</b> de Solar Lima
-                  Norte
+                  Ejemplo: reclamaste <b className="text-emerald-700">2.1 XLM</b> de un proyecto
                 </p>
-                <span className="text-slate-400">Hace 2h</span>
+                <span className="text-slate-400">Ilustrativo</span>
               </div>
             </div>
             <div className="flex gap-3">
@@ -712,10 +776,9 @@ function DashboardView({
               </div>
               <div>
                 <p className="leading-5 text-slate-600">
-                  Compraste <b className="text-slate-900">5 tokens</b> en Solar
-                  Arequipa
+                  Ejemplo: compraste <b className="text-slate-900">5 participaciones</b>
                 </p>
-                <span className="text-slate-400">Hace 1d</span>
+                <span className="text-slate-400">Ilustrativo</span>
               </div>
             </div>
             <div className="flex gap-3">
@@ -726,10 +789,10 @@ function DashboardView({
               </div>
               <div>
                 <p className="leading-5 text-slate-600">
-                  Solar San Martín generó{" "}
-                  <b className="text-slate-900">1,200 kWh</b>
+                  Ejemplo: el emisor reportó{" "}
+                  <b className="text-slate-900">1,200 kWh</b> con update_energy
                 </p>
-                <span className="text-slate-400">Hace 3d</span>
+                <span className="text-slate-400">Ilustrativo</span>
               </div>
             </div>
           </div>
@@ -753,88 +816,30 @@ function ClaimView({
   address?: string | null;
 }) {
   const [claiming, setClaiming] = useState(false);
-  const [lastTxHash, setLastTxHash] = useState<string | null>(null);
-  const { readContract } = useWallet();
-  const [claimables, setClaimables] = useState<Record<number, string> | null>(null);
-  const [totalClaimable, setTotalClaimable] = useState<string | null>(null);
+  const [last, setLast] = useState<{ hashes: string[]; claimed: bigint; projectName: string } | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const { projects, onChain } = useDisplayProjects();
+  const ids = useMemo(() => (onChain ?? []).map((p) => p.id), [onChain]);
+  const { positions, reload } = usePortfolio(connected ? address : null, ids);
 
-  useEffect(() => {
-    if (!connected || !address) {
-      setClaimables(null);
-      setTotalClaimable(null);
-      return;
-    }
-    let cancelled = false;
-    (async () => {
-      try {
-        const sdk = await import("@stellar/stellar-sdk");
-        const decode = (val: unknown) => {
-          try {
-            return (sdk as unknown as { scValToNative: (v: unknown) => unknown }).scValToNative(val as never);
-          } catch {
-            return val;
-          }
-        };
-        const ids = [1, 2, 3];
-        const map: Record<number, string> = {};
-        let total = BigInt(0);
-        for (const pid of ids) {
-          try {
-            const raw = await readContract(CONTRACT_ID, "get_claimable", [address, pid]);
-            const val = decode(raw);
-            const bi = BigInt(val as string | number | bigint);
-            total += bi;
-            map[pid] = (Number(bi) / 1_000_000).toLocaleString("en-US", { maximumFractionDigits: 2 });
-          } catch {
-            map[pid] = "—";
-          }
-        }
-        if (!cancelled) {
-          setClaimables(map);
-          setTotalClaimable((Number(total) / 1_000_000).toLocaleString("en-US", { maximumFractionDigits: 2 }));
-        }
-      } catch (e) {
-        console.warn("claimables fetch failed", e);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [connected, address, readContract]);
+  const isReal = connected && !!onChain && !!positions;
+  let total = BigInt(0);
+  const claimableIds: number[] = [];
+  positions?.forEach((pos, id) => {
+    total += pos.claimable;
+    if (pos.claimable > BigInt(0)) claimableIds.push(id);
+  });
 
-  const handleClaimAll = async () => {
-    if (!connected || !address) return;
+  const run = async (projectIds: number[], label: string) => {
+    if (!connected || !address || projectIds.length === 0) return;
     setClaiming(true);
-    try {
-      // contract: claim_revenue(address: Address, project_id: u64) — demo uses 1
-      const { txHash } = await signAndSend(CONTRACT_ID, "claim_revenue", [address, 1]);
-      setLastTxHash(txHash);
-    } catch (e) {
-      console.error("Claim failed:", e);
-    } finally {
-      setClaiming(false);
-    }
+    setError(null);
+    const r = await claimProjects(signAndSend, address, projectIds);
+    if (r.hashes.length > 0) setLast({ hashes: r.hashes, claimed: r.claimed, projectName: label });
+    if (r.error) setError(r.error);
+    await reload();
+    setClaiming(false);
   };
-
-  const handleClaimProject = async (projectId: number) => {
-    if (!connected || !address) return;
-    setClaiming(true);
-    try {
-      const normalized = projectId === 0 ? 1 : projectId;
-      const { txHash } = await signAndSend(CONTRACT_ID, "claim_revenue", [
-        address,
-        normalized,
-      ]);
-      setLastTxHash(txHash);
-    } catch (e) {
-      console.error("Claim failed:", e);
-    } finally {
-      setClaiming(false);
-    }
-  };
-
-  const displayTotal = connected && totalClaimable != null ? totalClaimable : "23.4";
-  const isDemo = !connected || totalClaimable == null;
 
   return (
     <div className="mx-auto flex w-full max-w-3xl flex-col gap-6">
@@ -846,35 +851,35 @@ function ClaimView({
           Reclamar ingresos
         </h1>
         <p className="mt-2 text-sm text-slate-500">
-          Tus ingresos registrados están listos para volver a tu wallet.
+          El emisor deposita ingresos con deposit_revenue; tu parte proporcional se reclama con claim_revenue y llega en XLM a tu wallet.
         </p>
       </div>
 
       {/* Total Card */}
       <div className="overflow-hidden rounded-2xl border border-orange-200 bg-gradient-to-br from-orange-50 via-white to-emerald-50 p-6 relative">
-        {isDemo && (
+        {!isReal && (
           <span className="absolute top-3 right-3 px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-amber-50 border border-amber-200 text-amber-700">
             DEMO • Testnet
           </span>
         )}
         <div className="text-sm text-slate-500">Total disponible</div>
         <div className="mt-2 font-mono text-4xl font-bold text-slate-900">
-          {displayTotal}{" "}
+          {isReal ? formatXlm(total) : "23.4"}{" "}
           <span className="text-xl text-orange-600">XLM</span>
         </div>
         {!connected && (
-          <p className="mt-2 text-xs text-amber-700">Conecta tu wallet para ver tus ingresos reales. Valor mostrado es simulado.</p>
+          <p className="mt-2 text-xs text-amber-700">Conecta tu wallet para ver tus ingresos reales. El valor mostrado es simulado.</p>
         )}
         <button
-          onClick={handleClaimAll}
-          disabled={!connected || claiming}
+          onClick={() => run(claimableIds, "Todos los proyectos")}
+          disabled={!isReal || claiming || claimableIds.length === 0}
           className="mt-6 w-full bg-orange-600 font-semibold text-white hover:bg-orange-700 px-4 py-2 rounded-lg text-sm transition-colors flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {claiming ? (
             "Procesando..."
           ) : (
             <>
-              Reclamar todo
+              Reclamar todo{claimableIds.length > 1 ? ` (${claimableIds.length} firmas)` : ""}
               <span className="material-symbols-outlined text-[16px]">
                 arrow_upward
               </span>
@@ -883,31 +888,32 @@ function ClaimView({
         </button>
       </div>
 
+      {error && <Notice tone="error">{error}</Notice>}
+
       {/* Breakdown */}
       <div className="bg-white border border-slate-200 rounded-xl shadow-md divide-y divide-slate-100">
         <div className="p-5 font-semibold text-slate-900 font-display">
           Desglose por proyecto
         </div>
         {projects.map((p) => {
-          const pid = p.projectId === 0 ? 1 : p.projectId;
-          const real = claimables?.[pid];
-          const display = real != null ? real : p.dividends;
-          const demoBadge = !connected || claimables == null;
+          const pos = positions?.get(p.id);
+          const amount = pos?.claimable ?? BigInt(0);
           return (
-            <div key={p.name} className="flex items-center justify-between p-5">
+            <div key={p.id} className="flex items-center justify-between p-5">
               <div>
                 <div className="font-medium text-slate-700">{p.name}</div>
                 <div className="mt-1 text-xs text-slate-500">
-                  {p.energy} kWh generados {demoBadge && <span className="ml-1 px-1 py-0.5 rounded bg-amber-50 border border-amber-200 text-amber-700 text-[9px]">DEMO</span>}
+                  {p.isDemo ? "Sin conexión a testnet" : `${p.energyKwh.toLocaleString("en-US")} kWh reportados · id ${p.id}`}{" "}
+                  {!isReal && <DemoBadge className="ml-1" />}
                 </div>
               </div>
               <div className="flex items-center gap-4">
                 <span className="font-mono text-emerald-600">
-                  {display} XLM
+                  {isReal ? `${formatXlm(amount)} XLM` : "—"}
                 </span>
                 <button
-                  onClick={() => handleClaimProject(p.projectId)}
-                  disabled={!connected || claiming}
+                  onClick={() => run([p.id], p.name)}
+                  disabled={!isReal || claiming || amount === BigInt(0)}
                   className="border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors disabled:opacity-50"
                 >
                   Reclamar
@@ -918,8 +924,8 @@ function ClaimView({
         })}
       </div>
 
-      {/* Certificate after successful claim */}
-      {lastTxHash && (
+      {/* Receipt after a successful claim */}
+      {last && (
         <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-5">
           <div className="flex items-center gap-3 mb-4">
             <span className="material-symbols-outlined text-emerald-600 text-[24px]">
@@ -927,22 +933,24 @@ function ClaimView({
             </span>
             <div>
               <div className="font-semibold text-emerald-800">
-                Transacción exitosa
+                Transacción exitosa: {formatXlm(last.claimed)} XLM reclamados
               </div>
-              <div className="text-xs text-emerald-600 font-mono">
-                {lastTxHash.slice(0, 16)}...
+              <div className="text-xs text-emerald-600 flex flex-wrap gap-2">
+                {last.hashes.map((h) => (
+                  <TxLink key={h} hash={h} />
+                ))}
               </div>
             </div>
           </div>
           <PdfCertificate
             data={{
-              projectName: "NIKO SUN Ingresos",
-              location: "Red Stellar Soroban",
-              capacity: "Multi-proyecto",
-              tokenAmount: "45",
-              pricePaid: "23.4 XLM",
-              walletAddress: "—",
-              txHash: lastTxHash,
+              projectName: last.projectName,
+              location: "Stellar testnet (demo)",
+              capacity: "—",
+              tokenAmount: "—",
+              pricePaid: `${formatXlm(last.claimed, { maxDecimals: 7 })} XLM reclamados`,
+              walletAddress: address ?? "—",
+              txHash: last.hashes[last.hashes.length - 1],
             }}
           />
         </div>
@@ -952,6 +960,10 @@ function ClaimView({
 }
 
 function MetricsView() {
+  const { onChain } = useDisplayProjects();
+  const energy = onChain ? onChain.reduce((a, p) => a + p.totalEnergyKwh, BigInt(0)) : null;
+  const revenue = onChain ? onChain.reduce((a, p) => a + p.totalRevenue, BigInt(0)) : null;
+  const minted = onChain ? onChain.reduce((a, p) => a + p.minted, BigInt(0)) : null;
   return (
     <div className="flex flex-col gap-7">
       <div>
@@ -959,30 +971,27 @@ function MetricsView() {
           Métricas
         </h1>
         <p className="mb-7 text-sm text-slate-500">
-          Transparencia energética y financiera de la red NIKO SUN.
+          Totales leídos del contrato v2. La energía (kWh) la reporta el emisor y queda anclada on-chain; un oráculo IoT firmado está en el roadmap.
         </p>
       </div>
       <div className="grid gap-4 md:grid-cols-3">
         <StatCard
           icon="power"
-          label="Energía generada"
-          value="1.2M kWh"
-          change="+18.4%"
-          demo
+          label="Energía reportada (on-chain)"
+          value={energy != null ? `${energy.toLocaleString("en-US")} kWh` : "1.2M kWh"}
+          demo={energy == null}
         />
         <StatCard
           icon="payments"
-          label="Revenue distribuido"
-          value="340 XLM"
-          change="+8.2%"
-          demo
+          label="Ingresos depositados (on-chain)"
+          value={revenue != null ? `${formatXlm(revenue)} XLM` : "340 XLM"}
+          demo={revenue == null}
         />
         <StatCard
           icon="eco"
-          label="CO₂ evitado"
-          value="628 t"
-          change="+14.1%"
-          demo
+          label="Participaciones emitidas"
+          value={minted != null ? minted.toString() : "628"}
+          demo={minted == null}
         />
       </div>
       <div className="bg-white border border-slate-200 rounded-xl shadow-md mt-5 p-6">
@@ -992,7 +1001,7 @@ function MetricsView() {
               Generación de energía
             </h2>
             <p className="mt-1 text-xs text-slate-500">
-              Últimos 30 días — todos los proyectos
+              Curva ilustrativa — no hay telemetría en tiempo real en esta demo
             </p>
           </div>
           <span className="rounded-full bg-amber-50 px-2 py-1 text-xs text-amber-700 border border-amber-200">
@@ -1010,11 +1019,170 @@ function MetricsView() {
   );
 }
 
+/** Parse a whole-number form field (supply, min purchase, kWh). */
+function parseWhole(value: string, label: string): bigint {
+  const v = value.trim().replace(/[,_\s]/g, "");
+  if (!/^\d+$/.test(v)) throw new Error(`${label}: ingresa un número entero`);
+  return BigInt(v);
+}
+
+function AdminProjectRow({
+  project,
+  address,
+  connected,
+  paused,
+  onDone,
+}: {
+  project: DisplayProject;
+  address: string | null;
+  connected: boolean;
+  paused: boolean | null;
+  onDone: () => Promise<void>;
+}) {
+  const { signAndSend } = useWallet();
+  const [sales, setSales] = useState<bigint | null>(null);
+  const [revenueXlm, setRevenueXlm] = useState("");
+  const [energyKwh, setEnergyKwh] = useState("");
+  const [withdrawXlm, setWithdrawXlm] = useState("");
+  const [busy, setBusy] = useState<"deposit" | "withdraw" | null>(null);
+  const [msg, setMsg] = useState<{ tone: "error" | "success"; text: string; hash?: string } | null>(null);
+  const isCreator = !!address && project.creator === address;
+
+  const loadSales = useCallback(async () => {
+    if (project.isDemo) return;
+    try {
+      setSales(big(await readContractNative("get_sales_balance", [project.id])));
+    } catch {
+      setSales(null);
+    }
+  }, [project.id, project.isDemo]);
+
+  useEffect(() => {
+    void loadSales();
+  }, [loadSales]);
+
+  const handleDeposit = async () => {
+    if (!connected || !address) return;
+    setMsg(null);
+    let amount: bigint;
+    let energy: bigint;
+    try {
+      amount = xlmToStroops(revenueXlm || "0");
+      energy = energyKwh.trim() ? parseWhole(energyKwh, "Energía") : BigInt(0);
+      if (amount <= BigInt(0)) throw new Error("El monto de ingresos debe ser mayor que cero");
+    } catch (e) {
+      setMsg({ tone: "error", text: e instanceof Error ? e.message : String(e) });
+      return;
+    }
+    setBusy("deposit");
+    try {
+      // contract: deposit_revenue(depositor: Address, project_id: u64, amount: u128 stroops, energy_kwh_delta: u128)
+      const { txHash } = await signAndSend(CONTRACT_ID, "deposit_revenue", [address, project.id, amount, energy]);
+      setMsg({ tone: "success", text: `Depositaste ${formatXlm(amount)} XLM (+${energy.toString()} kWh).`, hash: txHash });
+      setRevenueXlm("");
+      setEnergyKwh("");
+      await onDone();
+    } catch (e) {
+      setMsg({ tone: "error", text: describeTxError(e, { method: "deposit_revenue" }) });
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const handleWithdraw = async () => {
+    if (!connected || !address) return;
+    setMsg(null);
+    let amount: bigint;
+    try {
+      amount = xlmToStroops(withdrawXlm || "0");
+      if (amount <= BigInt(0)) throw new Error("El monto a retirar debe ser mayor que cero");
+      if (sales != null && amount > sales) throw new Error(`Saldo de ventas disponible: ${formatXlm(sales)} XLM`);
+    } catch (e) {
+      setMsg({ tone: "error", text: e instanceof Error ? e.message : String(e) });
+      return;
+    }
+    setBusy("withdraw");
+    try {
+      // contract: withdraw_sales(caller: Address, project_id: u64, amount: u128 stroops)
+      const { txHash } = await signAndSend(CONTRACT_ID, "withdraw_sales", [address, project.id, amount]);
+      setMsg({ tone: "success", text: `Retiraste ${formatXlm(amount)} XLM de ventas.`, hash: txHash });
+      setWithdrawXlm("");
+      await loadSales();
+      await onDone();
+    } catch (e) {
+      setMsg({ tone: "error", text: describeTxError(e, { method: "withdraw_sales" }) });
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const inputCls =
+    "w-full border border-slate-200 rounded-lg bg-white px-2.5 py-1.5 text-xs text-slate-900 outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20";
+  const canAct = connected && isCreator && !project.isDemo;
+
+  return (
+    <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 flex flex-col gap-3">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <div className="font-medium text-slate-700">{project.name}</div>
+          <div className="mt-1 text-xs text-slate-500">
+            id {project.id} — {project.progress}% vendido · ventas por retirar:{" "}
+            <span className="font-mono">{sales != null ? `${formatXlm(sales)} XLM` : "—"}</span>{" "}
+            {project.isDemo && <DemoBadge className="ml-1" />}
+          </div>
+          {!project.isDemo && !isCreator && (
+            <div className="mt-1 text-[11px] text-slate-400">
+              Solo el emisor creador ({project.creator ? `${project.creator.slice(0, 4)}…${project.creator.slice(-4)}` : "—"}) puede depositar o retirar.
+            </div>
+          )}
+        </div>
+      </div>
+      <div className="grid gap-2 sm:grid-cols-[1fr_1fr_auto] items-end">
+        <label className="text-[11px] text-slate-500">
+          Ingresos a depositar (XLM)
+          <input className={inputCls} placeholder="40" value={revenueXlm} onChange={(e) => setRevenueXlm(e.target.value)} disabled={!canAct} />
+        </label>
+        <label className="text-[11px] text-slate-500">
+          Energía del periodo (kWh)
+          <input className={inputCls} placeholder="0" value={energyKwh} onChange={(e) => setEnergyKwh(e.target.value)} disabled={!canAct} />
+        </label>
+        <button
+          onClick={handleDeposit}
+          disabled={!canAct || busy !== null || paused === true}
+          title={paused ? "Contrato en pausa: depósitos bloqueados" : undefined}
+          className="border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors disabled:opacity-50"
+        >
+          {busy === "deposit" ? "..." : "Depositar"}
+        </button>
+      </div>
+      <div className="grid gap-2 sm:grid-cols-[1fr_auto] items-end">
+        <label className="text-[11px] text-slate-500">
+          Retirar ventas (XLM)
+          <input className={inputCls} placeholder="5" value={withdrawXlm} onChange={(e) => setWithdrawXlm(e.target.value)} disabled={!canAct} />
+        </label>
+        <button
+          onClick={handleWithdraw}
+          disabled={!canAct || busy !== null}
+          className="border border-amber-200 bg-white text-amber-600 hover:bg-amber-50 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors disabled:opacity-50"
+        >
+          {busy === "withdraw" ? "..." : "Retirar"}
+        </button>
+      </div>
+      {msg && (
+        <Notice tone={msg.tone}>
+          {msg.text} {msg.hash && <TxLink hash={msg.hash} />}
+        </Notice>
+      )}
+    </div>
+  );
+}
+
 function AdminView() {
   const { signAndSend, connected, address } = useWallet();
+  const { projects, onChain, reload } = useDisplayProjects();
+  const compliance = useComplianceStatus(connected ? address : null);
   const [creating, setCreating] = useState(false);
-  const [depositing, setDepositing] = useState<number | null>(null);
-  const [withdrawing, setWithdrawing] = useState<number | null>(null);
+  const [createMsg, setCreateMsg] = useState<{ tone: "error" | "success"; text: string; hash?: string } | null>(null);
   const [form, setForm] = useState({
     name: "",
     supply: "",
@@ -1022,63 +1190,50 @@ function AdminView() {
     minPurchase: "",
   });
 
+  const mine = onChain && address ? onChain.filter((p) => p.creator === address) : null;
+  const isAdmin = !!address && compliance.admin === address;
+
   const handleCreateProject = async () => {
-    if (!connected || !address || !form.name) return;
+    if (!connected || !address) return;
+    setCreateMsg(null);
+    let supply: bigint;
+    let price: bigint;
+    let minPurchase: bigint;
+    try {
+      if (!form.name.trim()) throw new Error("Ingresa un nombre para el proyecto");
+      supply = parseWhole(form.supply, "Supply total");
+      price = xlmToStroops(form.price.replace(/xlm/i, "").trim());
+      minPurchase = parseWhole(form.minPurchase || "1", "Compra mínima");
+      if (supply <= BigInt(0) || price <= BigInt(0) || minPurchase <= BigInt(0)) {
+        throw new Error("Supply, precio y compra mínima deben ser mayores que cero");
+      }
+      if (minPurchase > supply) throw new Error("La compra mínima no puede superar el supply");
+    } catch (e) {
+      setCreateMsg({ tone: "error", text: e instanceof Error ? e.message : String(e) });
+      return;
+    }
     setCreating(true);
     try {
-      await signAndSend(CONTRACT_ID, "create_project", [
+      // contract: create_project(creator: Address, name: String, total_supply: u128, price: u128 stroops, min_purchase: u128) -> u64
+      const { txHash } = await signAndSend(CONTRACT_ID, "create_project", [
         address,
-        form.name,
-        parseInt(form.supply) || 10000,
-        parseInt(form.price) || 10,
-        parseInt(form.minPurchase) || 1,
+        form.name.trim(),
+        supply,
+        price,
+        minPurchase,
       ]);
+      setCreateMsg({ tone: "success", text: `Proyecto "${form.name.trim()}" creado on-chain.`, hash: txHash });
       setForm({ name: "", supply: "", price: "", minPurchase: "" });
+      await reload();
     } catch (e) {
-      console.error("Create project failed:", e);
+      setCreateMsg({ tone: "error", text: describeTxError(e, { method: "create_project" }) });
     } finally {
       setCreating(false);
     }
   };
 
-  const handleDepositRevenue = async (projectId: number) => {
-    if (!connected || !address) return;
-    setDepositing(projectId);
-    try {
-      // contract: deposit_revenue(depositor: Address, project_id: u64, amount: u128, energy_kwh_delta: u128)
-      const amountStroops = BigInt(10) * BigInt(1_000_000); // 10 XLM in stroops
-      const normalized = projectId === 0 ? 1 : projectId;
-      await signAndSend(CONTRACT_ID, "deposit_revenue", [
-        address,
-        normalized,
-        amountStroops,
-        BigInt(0), // energy_kwh_delta — no IoT yet
-      ]);
-    } catch (e) {
-      console.error("Deposit revenue failed:", e);
-    } finally {
-      setDepositing(null);
-    }
-  };
-
-  const handleWithdrawSales = async (projectId: number) => {
-    if (!connected || !address) return;
-    setWithdrawing(projectId);
-    try {
-      // contract: withdraw_sales(caller: Address, project_id: u64, amount: u128)
-      const amountStroops = BigInt(5) * BigInt(1_000_000); // 5 XLM in stroops
-      const normalized = projectId === 0 ? 1 : projectId;
-      await signAndSend(CONTRACT_ID, "withdraw_sales", [
-        address,
-        normalized,
-        amountStroops,
-      ]);
-    } catch (e) {
-      console.error("Withdraw sales failed:", e);
-    } finally {
-      setWithdrawing(null);
-    }
-  };
+  const inputCls =
+    "mt-2 w-full border border-slate-200 rounded-lg bg-white px-3 py-2.5 text-sm text-slate-900 outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20";
 
   return (
     <div className="flex flex-col gap-7">
@@ -1090,23 +1245,41 @@ function AdminView() {
           Panel de administración
         </h1>
         <p className="mt-2 text-sm text-slate-500">
-          Gestiona tus proyectos y distribuye revenue a holders.
+          Emisores verificados: crean proyectos, depositan ingresos (con los kWh del periodo) y retiran ventas.
         </p>
       </div>
 
+      {connected ? (
+        <div className="flex flex-col gap-2">
+          {compliance.paused === true && (
+            <Notice tone="warn">Contrato en pausa: create_project sigue disponible, pero deposit_revenue y las compras están bloqueadas.</Notice>
+          )}
+          <Notice tone={compliance.isIssuer ? "success" : "warn"}>
+            {compliance.isIssuer
+              ? "Tu cuenta es un emisor verificado (is_issuer = true): puedes crear proyectos."
+              : compliance.isIssuer === false
+                ? "Tu cuenta no es un emisor verificado. El administrador debe verificarla (set_issuer) antes de crear proyectos."
+                : "Leyendo estado de emisor…"}
+            {isAdmin && " Esta cuenta además es el admin del contrato."}
+          </Notice>
+        </div>
+      ) : (
+        <Notice tone="info">Conecta tu wallet de emisor para operar.</Notice>
+      )}
+
       <div className="grid gap-4 md:grid-cols-3">
-        <StatCard icon="wb_sunny" label="Tus proyectos" value="3" demo />
+        <StatCard icon="wb_sunny" label="Tus proyectos" value={mine ? String(mine.length) : "3"} demo={!mine} />
         <StatCard
           icon="payments"
-          label="Total aportado"
-          value="1,250 XLM"
-          demo
+          label="XLM recibidos por ventas (minted × precio)"
+          value={mine ? `${formatXlm(mine.reduce((a, p) => a + p.minted * p.price, BigInt(0)))} XLM` : "1,250 XLM"}
+          demo={!mine}
         />
         <StatCard
           icon="bolt"
-          label="Revenue depositado"
-          value="340 XLM"
-          demo
+          label="Ingresos depositados"
+          value={mine ? `${formatXlm(mine.reduce((a, p) => a + p.totalRevenue, BigInt(0)))} XLM` : "340 XLM"}
+          demo={!mine}
         />
       </div>
 
@@ -1120,7 +1293,7 @@ function AdminView() {
             <label className="text-xs text-slate-500">
               Nombre del proyecto
               <input
-                className="mt-2 w-full border border-slate-200 rounded-lg bg-white px-3 py-2.5 text-sm text-slate-900 outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20"
+                className={inputCls}
                 placeholder="Ej. Solar Cusco Sur"
                 value={form.name}
                 onChange={(e) =>
@@ -1130,10 +1303,10 @@ function AdminView() {
             </label>
             <div className="grid grid-cols-2 gap-3">
               <label className="text-xs text-slate-500">
-                Supply total
+                Supply total (participaciones)
                 <input
-                  className="mt-2 w-full border border-slate-200 rounded-lg bg-white px-3 py-2.5 text-sm text-slate-900 outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20"
-                  placeholder="10,000"
+                  className={inputCls}
+                  placeholder="1000"
                   value={form.supply}
                   onChange={(e) =>
                     setForm((f) => ({ ...f, supply: e.target.value }))
@@ -1141,10 +1314,10 @@ function AdminView() {
                 />
               </label>
               <label className="text-xs text-slate-500">
-                Precio por token
+                Precio por participación (XLM)
                 <input
-                  className="mt-2 w-full border border-slate-200 rounded-lg bg-white px-3 py-2.5 text-sm text-slate-900 outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20"
-                  placeholder="10 XLM"
+                  className={inputCls}
+                  placeholder="10"
                   value={form.price}
                   onChange={(e) =>
                     setForm((f) => ({ ...f, price: e.target.value }))
@@ -1153,10 +1326,10 @@ function AdminView() {
               </label>
             </div>
             <label className="text-xs text-slate-500">
-              Compra mínima
+              Compra mínima (participaciones)
               <input
-                className="mt-2 w-full border border-slate-200 rounded-lg bg-white px-3 py-2.5 text-sm text-slate-900 outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20"
-                placeholder="1 token"
+                className={inputCls}
+                placeholder="1"
                 value={form.minPurchase}
                 onChange={(e) =>
                   setForm((f) => ({ ...f, minPurchase: e.target.value }))
@@ -1165,7 +1338,7 @@ function AdminView() {
             </label>
             <button
               onClick={handleCreateProject}
-              disabled={!connected || creating}
+              disabled={!connected || creating || compliance.isIssuer !== true}
               className="mt-2 bg-emerald-600 text-white hover:bg-emerald-700 px-4 py-2 rounded-lg text-sm font-semibold transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
             >
               {creating ? (
@@ -1179,6 +1352,11 @@ function AdminView() {
                 </>
               )}
             </button>
+            {createMsg && (
+              <Notice tone={createMsg.tone}>
+                {createMsg.text} {createMsg.hash && <TxLink hash={createMsg.hash} />}
+              </Notice>
+            )}
           </div>
         </div>
 
@@ -1186,49 +1364,51 @@ function AdminView() {
         <div className="bg-white border border-slate-200 rounded-xl shadow-md p-5">
           <div className="mb-5 flex items-center justify-between">
             <h2 className="font-semibold text-slate-900 font-display">
-              Mis proyectos
+              Proyectos on-chain
             </h2>
-            <button className="border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors">
-              Exportar
-            </button>
+            {!onChain && <DemoBadge />}
           </div>
           <div className="flex flex-col gap-3">
             {projects.map((p) => (
-              <div
-                key={p.name}
-                className="flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 p-4"
-              >
-                <div>
-                  <div className="font-medium text-slate-700">{p.name}</div>
-                  <div className="mt-1 text-xs text-slate-500">
-                    {p.capacity} — {p.progress}% vendido <span className="ml-1 px-1 py-0.5 rounded bg-amber-50 border border-amber-200 text-amber-700 text-[9px]">DEMO</span>
-                  </div>
-                </div>
-                <div className="flex gap-2">
-                  <button
-                    onClick={() => handleDepositRevenue(p.projectId)}
-                    disabled={!connected || depositing === p.projectId}
-                    className="border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors disabled:opacity-50"
-                  >
-                    {depositing === p.projectId ? "..." : "Depositar"}
-                  </button>
-                  <button
-                    onClick={() => handleWithdrawSales(p.projectId)}
-                    disabled={!connected || withdrawing === p.projectId}
-                    className="border border-amber-200 bg-white text-amber-600 hover:bg-amber-50 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors disabled:opacity-50"
-                  >
-                    {withdrawing === p.projectId ? "..." : "Retirar"}
-                  </button>
-                  <button className="text-slate-400 hover:text-slate-600">
-                    <span className="material-symbols-outlined text-[18px]">
-                      more_horiz
-                    </span>
-                  </button>
-                </div>
-              </div>
+              <AdminProjectRow
+                key={p.id}
+                project={p}
+                address={address}
+                connected={connected}
+                paused={compliance.paused}
+                onDone={reload}
+              />
             ))}
           </div>
         </div>
+      </div>
+    </div>
+  );
+}
+
+function ProjectsView({ notify }: { notify: (m: string) => void }) {
+  const { projects, loading } = useDisplayProjects();
+  return (
+    <div>
+      <h1 className="mb-2 text-3xl font-bold text-slate-900 font-display">
+        Mis proyectos
+      </h1>
+      <p className="mb-7 text-sm text-slate-500">
+        Proyectos demo registrados en el contrato v2 de testnet.
+      </p>
+      <div className="grid gap-4 lg:grid-cols-3">
+        {projects.map((p) => (
+          <ProjectCard
+            key={p.id}
+            project={p}
+            isLoading={loading}
+            onSelect={() => {
+              // Detail pages are statically exported for the ids with metadata.
+              if (META_PROJECT_IDS.includes(p.id)) window.location.href = `/project/${p.id}/`;
+              else notify(`${p.name}: sin página de detalle en esta demo`);
+            }}
+          />
+        ))}
       </div>
     </div>
   );
@@ -1312,25 +1492,7 @@ export default function Page() {
                 address={address}
               />
             )}
-            {view === "projects" && (
-              <div>
-                <h1 className="mb-2 text-3xl font-bold text-slate-900 font-display">
-                  Mis proyectos
-                </h1>
-                <p className="mb-7 text-sm text-slate-500">
-                  Explora oportunidades solares y sigue tu participación.
-                </p>
-                <div className="grid gap-4 lg:grid-cols-3">
-                  {projects.map((p) => (
-                    <ProjectCard
-                      key={p.name}
-                      project={p}
-                      onSelect={() => notify(`Abriendo ${p.name}`)}
-                    />
-                  ))}
-                </div>
-              </div>
-            )}
+            {view === "projects" && <ProjectsView notify={notify} />}
             {view === "claim" && (
               <ClaimView
                 signAndSend={signAndSend}

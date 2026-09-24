@@ -6,8 +6,8 @@ const steps = [
     icon: "account_balance_wallet",
     title: "Conecta tu Wallet",
     description:
-      "Utiliza Freighter, Lobstr, o cualquier billetera compatible con la red Stellar y contratos inteligentes Soroban. Sin KYC invasivo para comenzar con aportes pequeños.",
-    tag: "SOPORTA FREIGHTER & LOBSTR",
+      "Conecta Freighter en Stellar testnet. Para comprar, el administrador debe aprobar tu cuenta como participante (KYC simulado en esta demo, set_participant).",
+    tag: "FREIGHTER · TESTNET",
     tagColor: "text-orange-600",
     iconBg: "bg-orange-50 border-orange-200 text-orange-600",
     glow: "bg-orange-100",
@@ -17,8 +17,8 @@ const steps = [
     icon: "solar_power",
     title: "Elige un Proyecto",
     description:
-      "Explora parques solares auditados física y legalmente en Perú y Chile. Monitorea su capacidad de irradiación, ubicación geográfica y contratos de compra PPA en tiempo real.",
-    tag: "AUDITORÍA LEGAL ON-CHAIN",
+      "Explora proyectos demo registrados on-chain por emisores verificados (set_issuer). Nombre, precio, supply y energía reportada se leen del contrato; ubicación e imagen son datos ficticios.",
+    tag: "EMISORES VERIFICADOS ON-CHAIN",
     tagColor: "text-emerald-700",
     iconBg: "bg-emerald-50 border-emerald-200 text-emerald-600",
     glow: "bg-emerald-100",
@@ -28,8 +28,8 @@ const steps = [
     icon: "payments",
     title: "Recibe tus Ingresos",
     description:
-      "A medida que la energía solar se inyecta en la red eléctrica, los ingresos se liquidan automáticamente a la bóveda de Soroban y se pagan directamente a tu wallet en XLM o USDC.",
-    tag: "PAGOS AUTOMATIZADOS 24H",
+      "El emisor deposita los ingresos del proyecto en el contrato Soroban (deposit_revenue) junto con los kWh del periodo, y tú reclamas tu parte proporcional en XLM cuando quieras (claim_revenue).",
+    tag: "RECLAMO ON-CHAIN EN XLM",
     tagColor: "text-amber-700",
     iconBg: "bg-amber-50 border-amber-200 text-amber-600",
     glow: "bg-amber-100",

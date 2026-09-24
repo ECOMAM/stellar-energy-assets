@@ -3,6 +3,7 @@
 import { useCallback } from "react";
 import jsPDF from "jspdf";
 import QRCode from "qrcode";
+import { CONTRACT_ID, TX_EXPLORER } from "@/lib/contract";
 
 interface CertificateData {
   projectName: string;
@@ -17,8 +18,8 @@ interface CertificateData {
 }
 
 /**
- * Generate a professional Solar Usufruct Certificate (CERTIFICADO DE USUFRUCTO SOLAR RWA)
- * as a legal/financial PDF document. Uses jsPDF directly + qrcode library for real QR codes.
+ * Generate a DEMO participation receipt (no legal or financial value) with a
+ * real QR code to the Stellar testnet transaction. Uses jsPDF + qrcode.
  */
 export default function PdfCertificate({ data }: { data: CertificateData }) {
   const generate = useCallback(async () => {
@@ -33,7 +34,7 @@ export default function PdfCertificate({ data }: { data: CertificateData }) {
         day: "numeric",
       });
 
-    const usufId = `SLN-USUF-${String(Math.floor(Math.random() * 9999)).padStart(4, "0")}`;
+    const receiptRef = data.txHash ? `Tx ${data.txHash.slice(0, 10)}` : "DEMO";
     const truncatedAddr =
       data.walletAddress.length > 16
         ? `${data.walletAddress.slice(0, 8)}...${data.walletAddress.slice(-4)}`
@@ -89,12 +90,11 @@ export default function PdfCertificate({ data }: { data: CertificateData }) {
     doc.setFont("helvetica", "bold");
     doc.setFontSize(7);
     doc.setTextColor(...orange);
-    doc.text("Título Digital Desmaterializado", w - 20, y - 2, { align: "right" });
+    doc.text("Comprobante demo · sin valor legal", w - 20, y - 2, { align: "right" });
 
-    // Right: material icon substitute (star icon text)
     doc.setFontSize(6);
     doc.setTextColor(...slate500);
-    doc.text("workspace_premium", w - 20, y + 3, { align: "right" });
+    doc.text("Stellar testnet", w - 20, y + 3, { align: "right" });
 
     y += 14;
 
@@ -102,7 +102,7 @@ export default function PdfCertificate({ data }: { data: CertificateData }) {
     doc.setFont("helvetica", "bold");
     doc.setFontSize(17);
     doc.setTextColor(...slate900);
-    doc.text("CERTIFICADO DE USUFRUCTO SOLAR RWA", w / 2, y, { align: "center" });
+    doc.text("COMPROBANTE DE PARTICIPACIÓN (DEMO)", w / 2, y, { align: "center" });
 
     y += 6;
 
@@ -110,7 +110,7 @@ export default function PdfCertificate({ data }: { data: CertificateData }) {
     doc.setFont("helvetica", "italic");
     doc.setFontSize(8);
     doc.setTextColor(...slate500);
-    doc.text("Ley General de Sociedades N° 26887 & D.L. 1023", w / 2, y, {
+    doc.text("Contrato Soroban v2 en Stellar testnet · sin valor legal ni financiero", w / 2, y, {
       align: "center",
     });
 
@@ -120,7 +120,7 @@ export default function PdfCertificate({ data }: { data: CertificateData }) {
     doc.setFont("helvetica", "bold");
     doc.setFontSize(9);
     doc.setTextColor(...amber);
-    doc.text(`NFT #${usufId}`, w - 20, y, { align: "right" });
+    doc.text(receiptRef, w - 20, y, { align: "right" });
 
     y += 3;
 
@@ -140,7 +140,7 @@ export default function PdfCertificate({ data }: { data: CertificateData }) {
     doc.setFont("helvetica", "bold");
     doc.setFontSize(8);
     doc.setTextColor(...slate500);
-    doc.text("ACTIVO SUBYACENTE", colLeftX, y);
+    doc.text("PROYECTO (DEMO)", colLeftX, y);
 
     y += 5;
 
@@ -167,18 +167,18 @@ export default function PdfCertificate({ data }: { data: CertificateData }) {
     doc.setFont("helvetica", "bold");
     doc.setFontSize(7);
     doc.setTextColor(...white);
-    doc.text("ACTIVO REAL", colLeftX + 12, y - 0.2, { align: "center" });
+    doc.text("DEMO", colLeftX + 12, y - 0.2, { align: "center" });
 
     // ── RIGHT COLUMN: Legal metadata ──
     let rightY = y - 12;
 
     const rightFields = [
-      { label: "Fideicomitente / Emisor", value: "La Fiduciaria S.A. / NIKO Protocol" },
-      { label: "Inscripción Registral", value: "SUNARP N° 14829104" },
-      { label: "Potencia Adjudicada", value: data.capacity || "—" },
-      { label: "Vigencia del Usufructo", value: "10 Años (PPA Indexado USD)" },
-      { label: "Titular Registrado", value: truncatedAddr },
-      { label: "Estándar Soroban", value: "SEP-41 Non-Fungible RWA" },
+      { label: "Contrato", value: `${CONTRACT_ID.slice(0, 8)}...${CONTRACT_ID.slice(-4)}` },
+      { label: "Red", value: "Stellar testnet" },
+      { label: "Capacidad (ilustrativa)", value: data.capacity || "—" },
+      { label: "Monto", value: data.pricePaid || "—" },
+      { label: "Cuenta", value: truncatedAddr },
+      { label: "Registro", value: "Balance en el contrato (no transferible)" },
     ];
 
     for (const field of rightFields) {
@@ -215,12 +215,12 @@ export default function PdfCertificate({ data }: { data: CertificateData }) {
     doc.setFont("helvetica", "bold");
     doc.setFontSize(9);
     doc.setTextColor(...amber);
-    doc.text("PATRIMONIO AUTÓNOMO", 38, paY + 7);
+    doc.text("DEMO TESTNET", 38, paY + 7);
 
     doc.setFont("helvetica", "normal");
     doc.setFontSize(7);
     doc.setTextColor(...slate500);
-    doc.text("Inembargable y auditado trimestralmente", 38, paY + 12);
+    doc.text("Sin valor legal ni financiero. Datos del activo ficticios.", 38, paY + 12);
 
     y = paY + 22;
 
@@ -229,7 +229,7 @@ export default function PdfCertificate({ data }: { data: CertificateData }) {
     const qrSize = 30;
 
     if (data.txHash) {
-      const qrUrl = `https://stellar.expert/testnet/tx/${data.txHash}`;
+      const qrUrl = TX_EXPLORER(data.txHash);
 
       try {
         // Generate REAL QR code as data URL
@@ -286,14 +286,14 @@ export default function PdfCertificate({ data }: { data: CertificateData }) {
     doc.setFontSize(6.5);
     doc.setFont("helvetica", "normal");
     doc.text(
-      "NIKOSUN RWA Solar — Certificado generado automáticamente",
+      "NIKOSUN RWA Solar — Comprobante demo generado automáticamente",
       w / 2,
       footerY + 12.5,
       { align: "center" }
     );
 
     // ── Save ──
-    const fileName = `NikoSun_Certificado_${data.projectName.replace(/\s+/g, "_")}_${Date.now()}.pdf`;
+    const fileName = `NikoSun_Comprobante_${data.projectName.replace(/\s+/g, "_")}_${Date.now()}.pdf`;
     doc.save(fileName);
   }, [data]);
 
@@ -303,7 +303,7 @@ export default function PdfCertificate({ data }: { data: CertificateData }) {
       className="inline-flex items-center gap-2 bg-emerald-600 text-white hover:bg-emerald-700 px-4 py-2 rounded-lg text-sm font-semibold transition-colors"
     >
       <span className="material-symbols-outlined text-[18px]">download</span>
-      Descargar Certificado
+      Descargar Comprobante
     </button>
   );
 }

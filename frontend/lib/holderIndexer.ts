@@ -1,36 +1,34 @@
 /**
- * Holder Indexer — Stellar Testnet (Soroban RPC)
- * Replaces the hardcoded 847 with a real indexed holder count.
+ * Holder Indexer — Stellar Testnet (Soroban RPC), contract v2.
  *
- * Strategy (MVP / hackathon without DB):
- * 1. Query Soroban RPC getEvents for CONTRACT_ID.
- * 2. Parse purchase_tokens events to reconstruct Map<address, balance>.
- * 3. Fallback to seed-address scanning via get_portfolio if no events.
- * 4. Cache in localStorage `niko-holder-cache` with timestamp.
- * Safe: never throws; returns indexing state on failure.
+ * Strategy (MVP without a database):
+ * 1. Read the v2 `purchase` events of CONTRACT_ID with getEvents. Wire format
+ *    (lib.rs, TokensPurchased): topics ["purchase", project_id: u64,
+ *    buyer: Address], data map {amount: u128, total_price: u128}.
+ *    startLedger comes from getHealth().oldestLedger (the RPC keeps ~7 days).
+ * 2. Candidates = buyers seen in those events + the approved demo
+ *    participants (seed) + addresses discovered in earlier runs.
+ * 3. Each candidate is confirmed on-chain with get_portfolio: a holder is an
+ *    account with token_balance > 0 (purchases older than the retention
+ *    window are still counted this way).
+ * 4. Cached in localStorage `niko-holder-cache`. Never throws.
  */
 
-import { CONTRACT_ID } from "./contract";
+import { CONTRACT_ID, DEMO_PARTICIPANTS } from "./contract";
+import { fetchContractEvents, type DecodedContractEvent } from "./events";
+import { readContractNative } from "./soroban";
+import { toBigInt, type StroopsLike } from "./units";
 
-const SERVER_URL =
-  process.env.NEXT_PUBLIC_STELLAR_RPC_URL ||
-  "https://soroban-testnet.stellar.org";
 const CACHE_KEY = "niko-holder-cache";
 const KNOWN_ADDR_KEY = "niko-known-addresses";
+/** Reuse a fresh result for this long (several components poll the same data). */
+const MEMO_MS = 15_000;
 
-// Seed addresses that have demonstrably interacted on testnet.
-// GA7P... fragment from spec is incomplete — we include the valid test
-// addresses we know and filter by valid Stellar address regex at runtime.
-const SEED_ADDRESSES: string[] = [
-  "GABGH363YQNYYAUN2M6YAPYFLPDMU5GZIJDWOEC2G3AUEH3TLPSXN3TX",
-  "GC755Q7SO6ZHWP4FOSR52R7W624DWO7RAD6UAQ5TLTEUBXBKMJ5AVIZ6",
-  // Mentioned in prompt as deployer prefix — included only if valid length
-  // (guarded by isValidAddress below).
-  "GA7PBYLH364U2JLJ3C5X7Y6Q5XQ5XQ5XQ5XQ5XQ5XQ5XQ5XQ5XQ5XQ5XQ",
-];
+/** Seed fallback: the participants approved on-chain in the demo cycle. */
+const SEED_ADDRESSES: readonly string[] = DEMO_PARTICIPANTS;
 
 function isValidAddress(a: string): boolean {
-  return /^[GC][A-Z0-9]{55}$/.test(a);
+  return /^[GC][A-Z2-7]{55}$/.test(a);
 }
 
 export type HolderMetrics = {
@@ -67,31 +65,22 @@ export function formatLastIndexed(isoString: string): string {
       hour12: false,
       timeZone: "UTC",
     });
-    // dtf.format returns "24 Sept 2026, 01:32" depending on locale — normalise.
     const parts = dtf.formatToParts(d);
     const get = (type: string) => parts.find((p) => p.type === type)?.value ?? "";
-    const day = get("day");
     const month = get("month");
-    // Normalise Sept -> Sep
     const monthShort = month === "Sept" ? "Sep" : month;
-    const year = get("year");
-    const hour = get("hour");
-    const minute = get("minute");
-    return `${day} ${monthShort} ${year} \u00B7 ${hour}:${minute} UTC`;
+    return `${get("day")} ${monthShort} ${get("year")} · ${get("hour")}:${get("minute")} UTC`;
   } catch {
     return "—";
   }
 }
 
-/**
- * Relative time helper for the verification panel, e.g. "18 sec ago".
- */
+/** Relative time helper for the verification panel, e.g. "18 sec ago". */
 export function formatRelativeTime(isoString: string): string {
   try {
     const then = new Date(isoString).getTime();
     if (isNaN(then)) return "";
-    const diffMs = Date.now() - then;
-    const sec = Math.floor(diffMs / 1000);
+    const sec = Math.floor((Date.now() - then) / 1000);
     if (sec < 60) return `${sec} sec ago`;
     const min = Math.floor(sec / 60);
     if (min < 60) return `${min} min ago`;
@@ -102,6 +91,58 @@ export function formatRelativeTime(isoString: string): string {
   } catch {
     return "";
   }
+}
+
+// ---------------------------------------------------------------------------
+// v2 `purchase` event parsing
+// ---------------------------------------------------------------------------
+
+export type PurchaseEvent = {
+  projectId: bigint;
+  buyer: string;
+  amount: bigint;
+  /** stroops paid */
+  totalPrice: bigint;
+  txHash?: string;
+  ledger?: number;
+};
+
+function big(v: unknown): bigint | null {
+  try {
+    return v === undefined || v === null ? null : toBigInt(v as StroopsLike);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Parse one decoded (scValToNative) `purchase` event:
+ * topics ["purchase", project_id, buyer], data {amount, total_price}.
+ * Returns null for any other event or malformed payload.
+ */
+export function parsePurchaseEvent(
+  evt: Pick<DecodedContractEvent, "topics" | "data"> & Partial<DecodedContractEvent>
+): PurchaseEvent | null {
+  if (!Array.isArray(evt.topics) || evt.topics.length !== 3) return null;
+  const [name, pid, buyer] = evt.topics;
+  if (name !== "purchase") return null;
+  const projectId = big(pid);
+  if (projectId === null || typeof buyer !== "string" || !isValidAddress(buyer)) return null;
+  const d = evt.data as Record<string, unknown> | null;
+  if (!d || typeof d !== "object") return null;
+  const amount = big(d.amount);
+  const totalPrice = big(d.total_price);
+  if (amount === null || totalPrice === null) return null;
+  return { projectId, buyer, amount, totalPrice, txHash: evt.txHash, ledger: evt.ledger };
+}
+
+/** Participations bought per buyer (sum of `amount` over all projects). */
+export function aggregatePurchases(events: PurchaseEvent[]): Map<string, bigint> {
+  const balances = new Map<string, bigint>();
+  for (const e of events) {
+    balances.set(e.buyer, (balances.get(e.buyer) ?? BigInt(0)) + e.amount);
+  }
+  return balances;
 }
 
 // ---------------------------------------------------------------------------
@@ -125,7 +166,6 @@ function writeCache(metrics: HolderMetrics): void {
   if (typeof window === "undefined" || !window.localStorage) return;
   try {
     window.localStorage.setItem(CACHE_KEY, JSON.stringify(metrics));
-    // also persist known holder set for future seed expansion
   } catch {
     // ignore quota errors
   }
@@ -135,10 +175,9 @@ function readKnownAddresses(): string[] {
   if (typeof window === "undefined" || !window.localStorage) return [];
   try {
     const raw = window.localStorage.getItem(KNOWN_ADDR_KEY);
-    if (!raw) return [];
-    const arr = JSON.parse(raw);
+    const arr: unknown = raw ? JSON.parse(raw) : [];
     if (!Array.isArray(arr)) return [];
-    return arr.filter((a: unknown) => typeof a === "string" && isValidAddress(a as string));
+    return arr.filter((a): a is string => typeof a === "string" && isValidAddress(a));
   } catch {
     return [];
   }
@@ -155,414 +194,112 @@ function writeKnownAddresses(addrs: string[]): void {
 }
 
 // ---------------------------------------------------------------------------
-// RPC helpers (Soroban RPC, not Horizon)
+// On-chain confirmation
 // ---------------------------------------------------------------------------
 
-async function getServer() {
-  const sdk = await import("@stellar/stellar-sdk");
-  // rpc.Server is the Soroban RPC client
-  const Server = (sdk as unknown as { rpc: { Server: new (url: string) => unknown } }).rpc.Server;
-  // fallback for sdk versions that expose Server differently
-  const Cls = Server ?? (sdk as unknown as { Server: new (url: string) => unknown }).Server;
-  if (!Cls) throw new Error("rpc.Server not available in stellar-sdk");
-  return new (Cls as new (url: string) => {
-    getEvents: (req: unknown) => Promise<unknown>;
-    simulateTransaction: (tx: unknown) => Promise<unknown>;
-    getLatestLedger?: () => Promise<{ sequence: number }>;
-  })(SERVER_URL);
+async function fetchProjectIds(): Promise<number[]> {
+  const next = Number(toBigInt((await readContractNative<StroopsLike>("next_project_id")) ?? 1));
+  const ids: number[] = [];
+  for (let i = 1; i < next && ids.length < 12; i++) ids.push(i);
+  return ids;
 }
 
-type ScValNativeHelper = (v: unknown) => unknown;
+type Position = { token_balance?: unknown; claimable_amount?: unknown };
 
-async function getScValToNative(): Promise<ScValNativeHelper | null> {
-  try {
-    const sdk = await import("@stellar/stellar-sdk");
-    const fn = (sdk as unknown as { scValToNative: ScValNativeHelper }).scValToNative;
-    if (typeof fn === "function") return fn;
-    // Some sdk versions expose via xdr
-    return null;
-  } catch {
-    return null;
+/** get_portfolio(addr, ids) -> total balance and whether anything is claimable. */
+async function probeHolder(addr: string, ids: number[]): Promise<{ balance: bigint; claimable: boolean }> {
+  const positions = await readContractNative<Position[]>("get_portfolio", [addr, ids]);
+  let balance = BigInt(0);
+  let claimable = false;
+  for (const p of Array.isArray(positions) ? positions : []) {
+    balance += big(p.token_balance) ?? BigInt(0);
+    if ((big(p.claimable_amount) ?? BigInt(0)) > BigInt(0)) claimable = true;
   }
-}
-
-// Simulate a read-only contract call without a wallet address.
-async function readContractView(method: string, args: unknown[]): Promise<unknown> {
-  const sdk = await import("@stellar/stellar-sdk");
-  const server = await getServer() as unknown as {
-    simulateTransaction: (tx: unknown) => Promise<{ error?: string; result?: { retval: unknown } } | { error: string }>;
-  };
-  const Address = (sdk as unknown as { Address: { fromString: (a: string) => { toScVal: () => unknown } } }).Address;
-  const nativeToScVal = (sdk as unknown as { nativeToScVal: (v: unknown, opts?: unknown) => unknown }).nativeToScVal;
-  const xdr = (sdk as unknown as { xdr: { ScVal: { scvVec: (vals: unknown[]) => unknown } } }).xdr;
-
-  const u64Methods = new Set([
-    "purchase_tokens",
-    "deposit_revenue",
-    "claim_revenue",
-    "withdraw_sales",
-    "update_energy",
-    "get_project",
-    "get_project_name",
-    "get_sales_balance",
-    "get_claimable",
-    "set_project_status",
-    "transfer_ownership",
-  ]);
-
-  const toScVals = args.map((a: unknown, index: number) => {
-    if (Array.isArray(a)) {
-      const isU64Vec = method === "get_portfolio" && index === 1;
-      const inner = (a as unknown[]).map((item: unknown) => {
-        if (typeof item === "string" && isValidAddress(item as string)) {
-          return Address.fromString(item as string).toScVal();
-        }
-        if (typeof item === "boolean") return nativeToScVal(item, { type: "bool" });
-        if (typeof item === "bigint" || typeof item === "number") {
-          const t = isU64Vec ? "u64" : "u128";
-          return nativeToScVal(BigInt((item as number | bigint).toString()), { type: t as string });
-        }
-        if (typeof item === "string") return nativeToScVal(item as string, { type: "string" });
-        return nativeToScVal(item as unknown);
-      });
-      return xdr.ScVal.scvVec(inner as never[]);
-    }
-    if (typeof a === "boolean") return nativeToScVal(a, { type: "bool" });
-    if (typeof a === "string" && isValidAddress(a)) return Address.fromString(a).toScVal();
-    if (typeof a === "bigint" || typeof a === "number") {
-      const isU64 = index === 1 && u64Methods.has(method);
-      if (isU64) return nativeToScVal(BigInt(a.toString()), { type: "u64" });
-      return nativeToScVal(BigInt(a.toString()), { type: "u128" });
-    }
-    if (typeof a === "string") return nativeToScVal(a as string, { type: "string" });
-    return a;
-  });
-
-  const Contract = (sdk as unknown as { Contract: new (id: string) => { call: (...args: unknown[]) => unknown } }).Contract;
-  const Account = (sdk as unknown as { Account: new (addr: string, seq: string) => unknown }).Account;
-  const TransactionBuilder = (sdk as unknown as {
-    TransactionBuilder: new (acc: unknown, opts: unknown) => {
-      addOperation: (op: unknown) => { setTimeout: (n: number) => { build: () => unknown } };
-    };
-  }).TransactionBuilder;
-
-  const contract = new Contract(CONTRACT_ID);
-  const op = contract.call(method, ...(toScVals as unknown[]));
-  const source = new (Account as new (a: string, s: string) => unknown)(
-    "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
-    "0"
-  );
-  const tx = new TransactionBuilder(source as never, {
-    fee: "100",
-    networkPassphrase: "Test SDF Network ; September 2015",
-  })
-    .addOperation(op)
-    .setTimeout(30)
-    .build() as unknown;
-
-  const sim = await server.simulateTransaction(tx as never);
-  // sdk.rpc.Api.isSimulationError check — do a shape inspection
-  if ((sim as { error?: string }).error) {
-    throw new Error((sim as { error: string }).error);
-  }
-  const retval = (sim as { result?: { retval: unknown } }).result?.retval;
-  return retval;
-}
-
-// ---------------------------------------------------------------------------
-// Event parsing
-// ---------------------------------------------------------------------------
-
-type RpcEvent = {
-  contractId?: string;
-  topic?: unknown[];
-  value?: unknown;
-  data?: unknown;
-  // allow extra fields
-  [k: string]: unknown;
-};
-
-function tryExtractBuyerAndAmount(
-  evt: RpcEvent,
-  scValToNative: ScValNativeHelper | null
-): { buyer: string | null; amount: bigint | null } {
-  try {
-    // Soroban events encode value as ScVal. Try multiple shapes.
-    const candidates: unknown[] = [];
-    if (evt.value !== undefined) candidates.push(evt.value);
-    if (evt.data !== undefined) candidates.push(evt.data);
-    // topic may contain purchaser
-    if (Array.isArray(evt.topic)) {
-      for (const t of evt.topic) candidates.push(t);
-    }
-
-    let buyer: string | null = null;
-    let amount: bigint | null = null;
-
-    for (const c of candidates) {
-      let native: unknown = c;
-      if (scValToNative) {
-        try {
-          native = scValToNative(c);
-        } catch {
-          // keep raw
-        }
-      }
-      // native may be address string, or object { buyer, amount }, or array
-      if (typeof native === "string" && isValidAddress(native)) {
-        buyer = native;
-      } else if (Array.isArray(native)) {
-        for (const el of native) {
-          if (typeof el === "string" && isValidAddress(el)) buyer = el;
-          if (typeof el === "bigint") amount = el as bigint;
-          if (typeof el === "number") amount = BigInt(el);
-          if (typeof el === "string" && /^\d+$/.test(el)) {
-            try {
-              amount = BigInt(el);
-            } catch {
-              // ignore
-            }
-          }
-        }
-      } else if (native && typeof native === "object") {
-        const obj = native as Record<string, unknown>;
-        const b = (obj.buyer ?? obj.address ?? obj.investor) as unknown;
-        if (typeof b === "string" && isValidAddress(b)) buyer = b;
-        const amt = (obj.amount ?? obj.value ?? obj.tokens) as unknown;
-        if (typeof amt === "bigint") amount = amt as bigint;
-        else if (typeof amt === "number") amount = BigInt(amt);
-        else if (typeof amt === "string" && /^\d+$/.test(amt)) {
-          try {
-            amount = BigInt(amt);
-          } catch {
-            // ignore
-          }
-        }
-      }
-    }
-    return { buyer, amount };
-  } catch {
-    return { buyer: null, amount: null };
-  }
+  return { balance, claimable };
 }
 
 // ---------------------------------------------------------------------------
 // Main indexer
 // ---------------------------------------------------------------------------
 
-export async function getHolderCount(): Promise<HolderMetrics> {
+let memo: { at: number; value: Promise<HolderMetrics> } | null = null;
+
+export function getHolderCount(): Promise<HolderMetrics> {
+  const now = Date.now();
+  if (memo && now - memo.at < MEMO_MS) return memo.value;
+  const value = indexHolders();
+  memo = { at: now, value };
+  return value;
+}
+
+async function indexHolders(): Promise<HolderMetrics> {
   const nowIso = new Date().toISOString();
-  const scValToNative = await getScValToNative().catch(() => null);
-
   try {
-    // 1) Try getEvents via Soroban RPC
-    let events: RpcEvent[] = [];
-    let transfers = 0;
+    // 1) v2 purchase events inside the RPC retention window.
+    let purchases: PurchaseEvent[] = [];
+    let eventsOk = false;
     try {
-      const server = (await getServer()) as unknown as {
-        getEvents: (req: {
-          startLedger: number;
-          filters?: unknown[];
-          limit?: number;
-          cursor?: string;
-        }) => Promise<{ events?: RpcEvent[]; latestLedger?: number }>;
-        getLatestLedger?: () => Promise<{ sequence: number }>;
-      };
-
-      // Determine startLedger: try latest - 100k window; fallback to 1
-      let startLedger = 1;
-      try {
-        if (server.getLatestLedger) {
-          const latest = await server.getLatestLedger();
-          if (latest && typeof latest.sequence === "number") {
-            startLedger = Math.max(1, latest.sequence - 150_000);
-          }
-        }
-      } catch {
-        // ignore, keep 1
-      }
-
-      const filters = [
-        {
-          type: "contract",
-          contractIds: [CONTRACT_ID],
-        },
-      ];
-
-      // Also try with explicit topic filter once; if it yields zero, retry without
-      let resp: { events?: RpcEvent[] } | null = null;
-      try {
-        resp = await server.getEvents({
-          startLedger,
-          filters: [
-            {
-              type: "contract",
-              contractIds: [CONTRACT_ID],
-              topics: [["purchase_tokens"]],
-            },
-          ] as never,
-          limit: 100,
-        });
-      } catch {
-        resp = null;
-      }
-
-      if (!resp || !resp.events || resp.events.length === 0) {
-        // retry without topic filter
-        try {
-          resp = await server.getEvents({
-            startLedger,
-            filters: filters as never,
-            limit: 100,
-          });
-        } catch {
-          // keep empty
-        }
-      }
-
-      if (resp?.events) events = resp.events as RpcEvent[];
-      transfers = events.length;
+      const events = await fetchContractEvents("purchase", ["*", "*"]);
+      purchases = events.map(parsePurchaseEvent).filter((e): e is PurchaseEvent => e !== null);
+      eventsOk = true;
     } catch (e) {
-      console.warn("holderIndexer getEvents failed, falling back to seed scan", e);
-      events = [];
+      console.warn(`holderIndexer: getEvents failed for ${CONTRACT_ID.slice(0, 6)}, using seed probes`, e);
     }
+    const fromEvents = aggregatePurchases(purchases);
 
-    // If we got events, try to reconstruct holders
-    if (events.length > 0) {
-      const balances = new Map<string, bigint>();
-      const buyersDiscovered: string[] = [];
-
-      for (const evt of events) {
-        const { buyer, amount } = tryExtractBuyerAndAmount(evt, scValToNative);
-        if (buyer && isValidAddress(buyer)) {
-          buyersDiscovered.push(buyer);
-          const prev = balances.get(buyer) ?? BigInt(0);
-          const amt = amount ?? BigInt(0);
-          balances.set(buyer, prev + amt);
-        }
-      }
-
-      // If parsing yielded at least one holder, use it
-      if (balances.size > 0) {
-        // Filter positive balances: holderCount = size (all have >0 by construction)
-        // Count active = claimable >0 — try per-holder get_portfolio; best-effort
-        let activeHolders: number | null = null;
-        try {
-          const ids = await fetchProjectIds();
-          const checks = await Promise.all(
-            Array.from(balances.keys()).map(async (addr) => {
-              try {
-                const raw = await readContractView("get_portfolio", [addr, ids]);
-                let positions: Array<Record<string, unknown>> = [];
-                if (scValToNative && raw) {
-                  try {
-                    const nat = scValToNative(raw);
-                    if (Array.isArray(nat)) positions = nat as Array<Record<string, unknown>>;
-                  } catch {
-                    positions = [];
-                  }
-                }
-                for (const p of positions) {
-                  const cl = (p.claimable_amount ?? p.claimableAmount ?? 0) as string | number | bigint;
-                  const bi = BigInt(cl as string | number | bigint);
-                  if (bi > BigInt(0)) return true;
-                }
-                return false;
-              } catch {
-                return false;
-              }
-            })
-          );
-          activeHolders = checks.filter(Boolean).length;
-        } catch {
-          activeHolders = null;
-        }
-
-        writeKnownAddresses([...buyersDiscovered, ...readKnownAddresses()]);
-
-        const holderCount = balances.size;
-        const metrics: HolderMetrics = {
-          holderCount,
-          activeHolders,
-          totalTransfers: transfers,
-          lastIndexedAt: nowIso,
-          source: "Stellar Testnet",
-          status: "indexed",
-          isStale: false,
-        };
-        writeCache(metrics);
-        return metrics;
-      }
-      // else fall through to seed scan (events present but unparseable)
-    }
-
-    // 2) Fallback: seed-address scan via get_portfolio
-    const projectIds = await fetchProjectIds().catch(() => [1, 2, 3] as number[]);
-    const seeds = Array.from(
-      new Set([...SEED_ADDRESSES.filter(isValidAddress), ...readKnownAddresses().filter(isValidAddress)])
+    // 2) Candidates: event buyers + seed participants + previously seen holders.
+    const candidates = Array.from(
+      new Set([...fromEvents.keys(), ...SEED_ADDRESSES, ...readKnownAddresses()].filter(isValidAddress))
     );
 
-    if (seeds.length === 0) {
-      // no seed to scan — return indexing state (maybe cache)
-      const cached = readCache();
-      if (cached) return { ...cached, isStale: true, status: "stale" as const };
-      return {
-        holderCount: null,
-        lastIndexedAt: nowIso,
-        source: "Stellar Testnet",
-        status: "indexing",
-      };
+    // 3) Confirm balances on-chain.
+    let ids: number[] = [];
+    try {
+      ids = await fetchProjectIds();
+    } catch {
+      ids = [];
     }
-
-    const holderMap = new Map<string, bigint>();
-    let activeCount = 0;
-
-    for (const addr of seeds) {
-      try {
-        const raw = await readContractView("get_portfolio", [addr, projectIds]);
-        let positions: Array<Record<string, unknown>> = [];
-        if (scValToNative && raw !== undefined && raw !== null) {
+    const holders: string[] = [];
+    let active = 0;
+    let probesOk = 0;
+    if (ids.length > 0) {
+      const results = await Promise.all(
+        candidates.map(async (addr) => {
           try {
-            const nat = scValToNative(raw);
-            if (Array.isArray(nat)) positions = nat as Array<Record<string, unknown>>;
+            return { addr, ...(await probeHolder(addr, ids)) };
           } catch {
-            positions = [];
+            return null;
           }
+        })
+      );
+      for (const r of results) {
+        if (!r) continue;
+        probesOk++;
+        if (r.balance > BigInt(0)) {
+          holders.push(r.addr);
+          if (r.claimable) active++;
         }
-        let totalBal = BigInt(0);
-        let hasClaimable = false;
-        for (const p of positions) {
-          const bal = BigInt((p.token_balance ?? p.tokenBalance ?? 0) as string | number | bigint);
-          totalBal += bal;
-          const cl = BigInt((p.claimable_amount ?? p.claimableAmount ?? 0) as string | number | bigint);
-          if (cl > BigInt(0)) hasClaimable = true;
-        }
-        if (totalBal > BigInt(0)) {
-          holderMap.set(addr, totalBal);
-          if (hasClaimable) activeCount++;
-        }
-      } catch (e) {
-        // individual seed failure is non-fatal
-        console.warn(`holderIndexer get_portfolio failed for ${addr.slice(0, 6)}`, e);
       }
     }
 
-    // If none of the seeds hold tokens, holderCount is 0 (real zero, not null).
-    // For MVP we still want to cache the observation with timestamp.
-    const holderCount = holderMap.size;
-    // If holderCount is 0 but we know there are projects, we show 0 as indexed
-    // rather than null — but if the contract has never minted, 0 is truthful.
-    // If projectIds fetch failed entirely, we stay conservative.
-
-    // Persist discovered holders for next run
-    if (holderMap.size > 0) {
-      writeKnownAddresses([...Array.from(holderMap.keys()), ...readKnownAddresses()]);
+    let holderCount: number | null;
+    let activeHolders: number | null;
+    if (probesOk > 0) {
+      holderCount = holders.length;
+      activeHolders = active;
+    } else if (eventsOk) {
+      // RPC reads failed but the events were parsed: count distinct buyers.
+      holderCount = fromEvents.size;
+      activeHolders = null;
+    } else {
+      throw new Error("no events and no on-chain probes");
     }
 
+    writeKnownAddresses([...holders, ...fromEvents.keys(), ...readKnownAddresses()]);
     const metrics: HolderMetrics = {
       holderCount,
-      activeHolders: holderCount > 0 ? activeCount : 0,
-      totalTransfers: transfers || null,
+      activeHolders,
+      totalTransfers: eventsOk ? purchases.length : null,
       lastIndexedAt: nowIso,
       source: "Stellar Testnet",
       status: "indexed",
@@ -573,42 +310,8 @@ export async function getHolderCount(): Promise<HolderMetrics> {
   } catch (err) {
     console.warn("holderIndexer failed", err);
     const cached = readCache();
-    if (cached) {
-      return { ...cached, isStale: true, status: "stale" };
-    }
-    return {
-      holderCount: null,
-      lastIndexedAt: nowIso,
-      source: "Stellar Testnet",
-      status: "indexing",
-    };
-  }
-}
-
-async function fetchProjectIds(): Promise<number[]> {
-  try {
-    const scValToNative = await getScValToNative().catch(() => null);
-    const raw = await readContractView("next_project_id", []);
-    let nextId = 1;
-    if (scValToNative && raw !== undefined && raw !== null) {
-      try {
-        const nat = scValToNative(raw);
-        if (typeof nat === "bigint") nextId = Number(nat);
-        else if (typeof nat === "number") nextId = nat as number;
-        else if (nat != null) nextId = Number(nat as string);
-      } catch {
-        nextId = Number(raw as string);
-      }
-    } else if (raw != null) {
-      nextId = Number(raw as string);
-    }
-    const ids: number[] = [];
-    for (let i = 1; i < nextId; i++) ids.push(i);
-    // Cap for RPC friendliness; if no project yet, return [1] so portfolio probe still works
-    if (ids.length === 0) return [1];
-    return ids.slice(0, 12);
-  } catch {
-    return [1, 2, 3];
+    if (cached) return { ...cached, isStale: true, status: "stale" };
+    return { holderCount: null, lastIndexedAt: nowIso, source: "Stellar Testnet", status: "indexing" };
   }
 }
 

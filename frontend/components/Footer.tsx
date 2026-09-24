@@ -48,7 +48,7 @@ export default function Footer() {
               href="#"
               className="text-[13px] text-slate-600 hover:text-emerald-700 transition-colors"
             >
-              Oráculo IoT Telemetría
+              Oráculo IoT (roadmap)
             </a>
             <a
               href="#"

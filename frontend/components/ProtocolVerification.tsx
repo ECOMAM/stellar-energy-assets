@@ -1,7 +1,14 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { CONTRACT_ID, EXPLORER_URL, LEDGER_EXPLORER_URL } from "@/lib/contract";
+import {
+  CONTRACT_ID,
+  EXPLORER_URL,
+  HOLDER_EXPLORER,
+  LEDGER_EXPLORER_URL,
+  ONCHAIN_CYCLE_DOC_URL,
+} from "@/lib/contract";
+import { readContractNative } from "@/lib/soroban";
 import {
   formatHolderCount,
   formatLastIndexed,
@@ -25,11 +32,27 @@ export default function ProtocolVerification({
   totalMinted,
 }: Props) {
   const [nowTick, setNowTick] = useState(0);
+  const [admin, setAdmin] = useState<string | null>(null);
+  const [paused, setPaused] = useState<boolean | null>(null);
 
   // tick every 5s to refresh relative time
   useEffect(() => {
     const id = setInterval(() => setNowTick((t) => t + 1), 5000);
     return () => clearInterval(id);
+  }, []);
+
+  // v2 admin and global pause, read-only (get_admin, is_paused).
+  useEffect(() => {
+    let cancelled = false;
+    readContractNative<string>("get_admin")
+      .then((a) => !cancelled && setAdmin(typeof a === "string" ? a : null))
+      .catch(() => !cancelled && setAdmin(null));
+    readContractNative<boolean>("is_paused")
+      .then((p) => !cancelled && setPaused(typeof p === "boolean" ? p : null))
+      .catch(() => !cancelled && setPaused(null));
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const holderDisplay =
@@ -59,7 +82,7 @@ export default function ProtocolVerification({
             Protocol Status
           </h3>
           <span className="font-mono text-[11px] px-2 py-1 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-700 font-semibold">
-            Stellar Testnet
+            Stellar Testnet · contrato v2
           </span>
         </div>
 
@@ -70,11 +93,28 @@ export default function ProtocolVerification({
               icon="contract"
               color="text-emerald-600"
               label="Soroban contract"
-              value="Verified"
+              value="Deployed (v2)"
               href={EXPLORER_URL}
               hrefLabel="View Contract →"
               title={CONTRACT_ID}
               sub={shortContract(CONTRACT_ID)}
+            />
+            <Row
+              icon="admin_panel_settings"
+              color="text-emerald-600"
+              label="Admin"
+              value={admin ? shortContract(admin) : "—"}
+              href={admin ? HOLDER_EXPLORER(admin) : undefined}
+              hrefLabel={admin ? "Account →" : undefined}
+              title={admin ?? undefined}
+            />
+            <Row
+              icon={paused ? "pause_circle" : "play_circle"}
+              color={paused ? "text-amber-600" : "text-emerald-600"}
+              label="Global pause (is_paused)"
+              value={paused === null ? "—" : paused ? "Paused" : "Active"}
+              ok={paused !== true}
+              sub={paused ? "purchases & deposits blocked" : undefined}
             />
             <Row
               icon="database"
@@ -86,8 +126,8 @@ export default function ProtocolVerification({
             <Row
               icon="token"
               color="text-emerald-600"
-              label="Token balances"
-              value="Indexed"
+              label="Participations minted"
+              value="On-chain"
               sub={totalMinted != null ? `(total minted: ${totalMinted})` : undefined}
             />
             <Row
@@ -113,18 +153,6 @@ export default function ProtocolVerification({
                   : metrics?.source ?? "Stellar Testnet"
               }
             />
-            <Row
-              icon="payments"
-              color="text-emerald-600"
-              label="Claimable balances"
-              value="On-chain"
-            />
-            <Row
-              icon="solar_power"
-              color="text-emerald-600"
-              label="Project state"
-              value="On-chain"
-            />
           </div>
 
           {/* Right column — network & index time */}
@@ -139,6 +167,13 @@ export default function ProtocolVerification({
               </span>
             </div>
 
+            <div className="rounded-lg bg-white border border-slate-200 p-3">
+              <div className="font-mono text-[11px] uppercase tracking-widest text-slate-500 font-semibold mb-1">
+                Contract ID
+              </div>
+              <div className="font-mono text-[11px] font-semibold text-slate-900 break-all">{CONTRACT_ID}</div>
+            </div>
+
             <div className="rounded-lg bg-white border border-slate-200 p-4">
               <div className="font-mono text-[11px] uppercase tracking-widest text-slate-500 font-semibold mb-1">
                 Last indexed
@@ -149,7 +184,7 @@ export default function ProtocolVerification({
                   <span className="ml-2 font-normal text-slate-500">· {relative}</span>
                 ) : null}
               </div>
-              <div className="mt-2 flex items-center gap-2">
+              <div className="mt-2 flex flex-wrap items-center gap-3">
                 <a
                   href={LEDGER_EXPLORER_URL}
                   target="_blank"
@@ -157,6 +192,15 @@ export default function ProtocolVerification({
                   className="font-mono text-[11px] font-semibold text-emerald-700 hover:text-emerald-800 hover:underline inline-flex items-center gap-1"
                 >
                   View Ledger
+                  <span className="material-symbols-outlined text-[14px]">open_in_new</span>
+                </a>
+                <a
+                  href={ONCHAIN_CYCLE_DOC_URL}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="font-mono text-[11px] font-semibold text-emerald-700 hover:text-emerald-800 hover:underline inline-flex items-center gap-1"
+                >
+                  Ciclo on-chain (evidencia)
                   <span className="material-symbols-outlined text-[14px]">open_in_new</span>
                 </a>
                 {metrics?.isStale && (
@@ -168,10 +212,11 @@ export default function ProtocolVerification({
             </div>
 
             <p className="font-mono text-[11px] leading-relaxed text-slate-500">
-              Holder count is indexed from Soroban RPC events for{" "}
-              <span className="font-semibold text-slate-700">{shortContract(CONTRACT_ID)}</span>. If the
-              contract does not emit purchase events yet, the indexer falls back to known
-              holder probes and shows an honest indexing state — never a fabricated number.
+              Holder count: buyers found in the contract&apos;s <span className="font-semibold text-slate-700">purchase</span> events
+              (RPC retention window, ~7 days) plus the approved demo participants, each confirmed
+              on-chain with get_portfolio (balance &gt; 0) for{" "}
+              <span className="font-semibold text-slate-700">{shortContract(CONTRACT_ID)}</span>. If
+              nothing can be read, the panel shows an indexing state, never a fabricated number.
             </p>
           </div>
         </div>
@@ -189,6 +234,7 @@ function Row({
   href,
   hrefLabel,
   title,
+  ok = true,
 }: {
   icon: string;
   color: string;
@@ -198,6 +244,7 @@ function Row({
   href?: string;
   hrefLabel?: string;
   title?: string;
+  ok?: boolean;
 }) {
   return (
     <div className="flex items-center justify-between px-5 py-3 gap-3">
@@ -206,8 +253,10 @@ function Row({
         <span className="font-mono text-[12px] font-medium text-slate-700 truncate">{label}</span>
       </div>
       <div className="flex items-center gap-2 shrink-0">
-        <span className="font-mono text-[12px] font-semibold text-slate-900 inline-flex items-center gap-1">
-          <span className="material-symbols-outlined text-emerald-600 text-[14px]">check</span>
+        <span className="font-mono text-[12px] font-semibold text-slate-900 inline-flex items-center gap-1" title={title}>
+          <span className={`material-symbols-outlined ${ok ? "text-emerald-600" : "text-amber-600"} text-[14px]`}>
+            {ok ? "check" : "warning"}
+          </span>
           {value}
         </span>
         {sub && <span className="font-mono text-[11px] text-slate-500 hidden sm:inline">{sub}</span>}
