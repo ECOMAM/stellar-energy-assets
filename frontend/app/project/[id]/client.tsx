@@ -2,6 +2,7 @@
 
 import { useState, useCallback, useEffect } from "react";
 import { useWallet } from "@/lib/WalletContext";
+import { CONTRACT_ID } from "@/lib/contract";
 import TransactionSigningModal from "@/components/TransactionSigningModal";
 import TransactionSuccess from "@/components/TransactionSuccess";
 
@@ -81,7 +82,7 @@ function shortAddr(a: string) {
 
 /* ──────────────────── Component ──────────────────── */
 
-export default function ProjectDetailClient() {
+export default function ProjectDetailClient({ id }: { id?: string }) {
   const {
     connected,
     address,
@@ -89,6 +90,7 @@ export default function ProjectDetailClient() {
     signAndSend,
     connect,
     fetchBalance,
+    readContract,
   } = useWallet();
 
   /* ── Investment calculator state ── */
@@ -98,6 +100,103 @@ export default function ProjectDetailClient() {
   /* ── Mounted guard for hydration (prevents React #418) ── */
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
+
+  /* ── On-chain project override (keep PROJECT as mock fallback) ── */
+  const [chainProject, setChainProject] = useState<{
+    pricePerToken: number;
+    totalSupply: number;
+    soldSupply: number;
+    fundingPct: number;
+    totalEnergyKwh: number;
+    isReal: boolean;
+  } | null>(null);
+  const [claimableXlm, setClaimableXlm] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!id) return;
+    const pid = Number(id);
+    if (Number.isNaN(pid)) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const sdk = await import("@stellar/stellar-sdk");
+        const decode = (val: unknown) => {
+          try {
+            return (sdk as unknown as { scValToNative: (v: unknown) => unknown }).scValToNative(val as never);
+          } catch {
+            return val;
+          }
+        };
+        const raw = await readContract(CONTRACT_ID, "get_project", [pid]);
+        const p = decode(raw) as Record<string, unknown>;
+        const totalSupply = BigInt((p.total_supply ?? p.totalSupply ?? 0) as string | number | bigint);
+        const minted = BigInt((p.minted ?? 0) as string | number | bigint);
+        const price = BigInt((p.price ?? 0) as string | number | bigint);
+        const totalEnergyKwh = BigInt((p.total_energy_kwh ?? p.totalEnergyKwh ?? 0) as string | number | bigint);
+        const fundingPct = totalSupply > BigInt(0) ? Number((minted * BigInt(100)) / totalSupply) : PROJECT.fundingPct;
+        const pricePerToken = Number(price) / 1_000_000;
+        if (!cancelled) {
+          setChainProject({
+            pricePerToken: pricePerToken > 0 ? pricePerToken : PROJECT.pricePerToken,
+            totalSupply: Number(totalSupply) > 0 ? Number(totalSupply) : PROJECT.totalSupply,
+            soldSupply: Number(minted),
+            fundingPct,
+            totalEnergyKwh: Number(totalEnergyKwh),
+            isReal: true,
+          });
+        }
+      } catch (e) {
+        console.warn(`get_project(${pid}) failed, using mock fallback`, e);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [id, readContract]);
+
+  useEffect(() => {
+    if (!connected || !address || !id) {
+      setClaimableXlm(null);
+      return;
+    }
+    const pid = Number(id);
+    if (Number.isNaN(pid)) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const sdk = await import("@stellar/stellar-sdk");
+        const decode = (val: unknown) => {
+          try {
+            return (sdk as unknown as { scValToNative: (v: unknown) => unknown }).scValToNative(val as never);
+          } catch {
+            return val;
+          }
+        };
+        const raw = await readContract(CONTRACT_ID, "get_claimable", [address, pid]);
+        const val = decode(raw);
+        const bi = BigInt(val as string | number | bigint);
+        if (!cancelled) setClaimableXlm((Number(bi) / 1_000_000).toLocaleString("en-US", { maximumFractionDigits: 2 }));
+      } catch (e) {
+        console.warn("get_claimable failed", e);
+        if (!cancelled) setClaimableXlm(null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [connected, address, id, readContract]);
+
+  const displayProject = chainProject
+    ? {
+        ...PROJECT,
+        pricePerToken: chainProject.pricePerToken,
+        totalSupply: chainProject.totalSupply,
+        soldSupply: chainProject.soldSupply,
+        fundingPct: chainProject.fundingPct,
+      }
+    : PROJECT;
+  const onChainEnergy = chainProject?.totalEnergyKwh ?? PROJECT.monthlyProductionKwh;
+  const isDemoChain = !chainProject?.isReal;
 
   /* ── Signing modal state machine ── */
   type SigningPhase =
@@ -119,12 +218,12 @@ export default function ProjectDetailClient() {
   const [telemetryTab, setTelemetryTab] = useState<"Hoy" | "7 D\u00EDas" | "Este Mes" | "Hist\u00F3rico">("Hoy");
 
   /* ── Derived calculations ── */
-  const pricePerToken = PROJECT.pricePerToken; // XLM
+  const pricePerToken = displayProject.pricePerToken; // XLM (real on-chain when available)
   const costXlm = tokenCount * pricePerToken;
   const costUsd = costXlm * XLM_TO_USD;
-  const capacityAdjudicada = tokenCount * PROJECT.tokenWp;
-  const retornoDiario = (costXlm * PROJECT.apy) / 365;
-  const retornoAnual = costXlm * (PROJECT.apy / 100);
+  const capacityAdjudicada = tokenCount * displayProject.tokenWp;
+  const retornoDiario = (costXlm * displayProject.apy) / 365;
+  const retornoAnual = costXlm * (displayProject.apy / 100);
   const co2Mitigado = tokenCount * 0.32; // ~0.32 ton CO2 per token per year
 
   /* ── Handle buy: opens modal, then executes on confirm ── */
@@ -164,10 +263,11 @@ export default function ProjectDetailClient() {
 
       // ── Purchase tokens ──
       setSigningPhase("signing");
+      const projectIdForTx = BigInt(Number(id) || 1);
       const { txHash: hash } = await signAndSend(
-        PROJECT.contractId,
+        CONTRACT_ID,
         "purchase_tokens",
-        [address, BigInt(1), BigInt(tokenCount), paymentStroops]
+        [address, projectIdForTx, BigInt(tokenCount), paymentStroops]
       );
 
       setTxHash(hash);
@@ -226,6 +326,7 @@ export default function ProjectDetailClient() {
     tokenCount,
     pricePerToken,
     signAndSend,
+    id,
   ]);
 
   /* ── SVG solar curve data ── */
@@ -329,7 +430,7 @@ export default function ProjectDetailClient() {
               Ficha T\u00E9cnica PDF
             </button>
             <a
-              href={`https://stellar.expert/testnet/contract/${PROJECT.contractId}`}
+              href={`https://stellar.expert/explorer/testnet/contract/${CONTRACT_ID}`}
               target="_blank"
               rel="noopener noreferrer"
               className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2 text-[13px] font-medium text-slate-700 shadow-sm transition-all hover:bg-slate-50"
@@ -340,7 +441,7 @@ export default function ProjectDetailClient() {
               Ver en Soroban Explorer
             </a>
             <span className="font-mono text-[11px] text-slate-400">
-              {shortAddr(PROJECT.contractId)}
+              {shortAddr(CONTRACT_ID)}
             </span>
           </div>
         </div>
@@ -351,7 +452,7 @@ export default function ProjectDetailClient() {
             {
               icon: "solar_power",
               label: "Capacidad",
-              value: "150 kWp",
+              value: `${displayProject.capacityKwp} kWp`,
               color: "text-emerald-600",
               bg: "bg-emerald-50",
             },
@@ -365,14 +466,14 @@ export default function ProjectDetailClient() {
             {
               icon: "token",
               label: "Precio",
-              value: "10 XLM",
+              value: `${displayProject.pricePerToken} XLM`,
               color: "text-orange-600",
               bg: "bg-orange-50",
             },
             {
               icon: "bolt",
               label: "Producci\u00F3n",
-              value: "45.2 MWh",
+              value: `${(onChainEnergy / 1000).toFixed(1)} MWh`,
               color: "text-amber-600",
               bg: "bg-amber-50",
             },
@@ -386,14 +487,14 @@ export default function ProjectDetailClient() {
             {
               icon: "account_balance",
               label: "Fondeo",
-              value: "85%",
+              value: `${displayProject.fundingPct}%`,
               color: "text-emerald-600",
               bg: "bg-emerald-50",
               extra: (
                 <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-slate-200">
                   <div
                     className="h-full rounded-full bg-emerald-500 transition-all"
-                    style={{ width: `${PROJECT.fundingPct}%` }}
+                    style={{ width: `${displayProject.fundingPct}%` }}
                   />
                 </div>
               ),
@@ -575,6 +676,24 @@ export default function ProjectDetailClient() {
                     <div className="text-[11px] text-slate-400">{g.label}</div>
                   </div>
                 ))}
+              </div>
+              {/* Gauge DEMO badge — on-chain anchor */}
+              <div
+                className={`mb-5 flex items-center gap-2 px-3 py-1.5 rounded-lg border text-[11px] font-mono ${
+                  isDemoChain
+                    ? "bg-amber-50 border-amber-200 text-amber-700"
+                    : "bg-emerald-50 border-emerald-200 text-emerald-700"
+                }`}
+              >
+                <span className="material-symbols-outlined text-[14px]">
+                  {isDemoChain ? "science" : "verified"}
+                </span>
+                {isDemoChain
+                  ? `DEMO • Simulado — último anclaje on-chain: ${onChainEnergy.toLocaleString("en-US")} kWh`
+                  : `Anclaje on-chain: ${onChainEnergy.toLocaleString("en-US")} kWh`}
+                {claimableXlm != null && connected && (
+                  <span className="ml-auto font-bold">claimable: {claimableXlm} XLM</span>
+                )}
               </div>
 
               {/* SVG solar production curve */}
@@ -1008,17 +1127,17 @@ export default function ProjectDetailClient() {
         onConfirm={executeBuy}
         phase={signingPhase}
         errorMessage={signingError}
-        projectName={PROJECT.name}
-        projectFlag={PROJECT.flag}
-        assetId={PROJECT.assetId}
+        projectName={displayProject.name}
+        projectFlag={displayProject.flag}
+        assetId={displayProject.assetId}
         tokenCount={tokenCount}
         costXlm={costXlm}
         costUsd={costUsd}
-        apy={PROJECT.apy}
+        apy={displayProject.apy}
         capacityWp={capacityAdjudicada}
         walletAddress={address || ""}
         walletBalance={balance}
-        contractId={PROJECT.contractId}
+        contractId={CONTRACT_ID}
       />
 
       {/* ═══════════ Success Screen ═══════════ */}
@@ -1033,13 +1152,13 @@ export default function ProjectDetailClient() {
         tokenCount={tokenCount}
         costXlm={costXlm}
         costUsd={costUsd}
-        projectName={PROJECT.name}
-        projectFlag={PROJECT.flag}
-        assetId={PROJECT.assetId}
+        projectName={displayProject.name}
+        projectFlag={displayProject.flag}
+        assetId={displayProject.assetId}
         walletAddress={address || ""}
-        apy={PROJECT.apy}
+        apy={displayProject.apy}
         capacityWp={capacityAdjudicada}
-        contractId={PROJECT.contractId}
+        contractId={CONTRACT_ID}
       />
     </div>
   );
