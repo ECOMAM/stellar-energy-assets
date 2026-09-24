@@ -1,0 +1,17 @@
+{
+  // Separate tsconfig scoped to the vitest suite (__tests__/** + vitest.config.ts).
+  // The main tsconfig.json intentionally excludes these paths (see commit 346c3f9,
+  // "fix: remove test deps from production build (Netlify crash)") so that `next build`
+  // and `npx tsc --noEmit` never depend on test-only types. This file exists purely for
+  // editor/IDE type-checking of the test suite and is NOT referenced by any build or CI
+  // step (next build / tsc --noEmit / vitest run all ignore it).
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "target": "ES2020",
+    "lib": ["dom", "dom.iterable", "esnext"],
+    "types": ["vitest/globals", "@testing-library/jest-dom"],
+    "noEmit": true
+  },
+  "include": ["__tests__/**/*.ts", "__tests__/**/*.tsx", "vitest.config.ts"],
+  "exclude": ["node_modules"]
+}

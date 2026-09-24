@@ -1,49 +1,46 @@
-name: Build & Test Contract
+name: CI
 
 on:
   push:
-    branches: [main]
+    branches:
+      - main
+      - "integracion/**"
   pull_request:
-    branches: [main]
+    branches:
+      - main
 
 jobs:
-  build-contract:
+  contract:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Rust
+      - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: wasm32v1-none
+          components: clippy
 
       - name: Cache Cargo
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+        uses: Swatinem/rust-cache@v2
 
-      - name: Build Contract
-        run: |
-          cd contracts/niko_project
-          cargo build --target wasm32v1-none --release
+      - name: Run contract tests
+        run: cargo test --locked
 
-      - name: Run Tests
-        run: |
-          cd contracts/niko_project
-          cargo test
+      - name: Lint (clippy)
+        run: cargo clippy --locked --all-targets -- -D warnings
 
-      - name: Upload WASM artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: niko-project-wasm
-          path: contracts/niko_project/target/wasm32v1-none/release/*.wasm
+      - name: Build release WASM
+        run: cargo build --locked --target wasm32v1-none --release
 
-  build-frontend:
+      - name: Print WASM checksum
+        run: sha256sum target/wasm32v1-none/release/niko_project.wasm
+
+  frontend:
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
     steps:
       - uses: actions/checkout@v4
 
@@ -55,16 +52,17 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
 
       - name: Install dependencies
-        run: |
-          cd frontend
-          npm ci
+        run: npm ci
 
-      - name: Build frontend
-        run: |
-          cd frontend
-          npm run build
+      # No lint step here: the repo has no ESLint config, and `npm run lint` (next lint)
+      # would try to prompt interactively to create one, which hangs/fails in CI.
+      # Re-add a lint step once an eslint config (e.g. eslint.config.mjs) is committed.
 
-      - name: Run lint
-        run: |
-          cd frontend
-          npm run lint
+      - name: Type-check
+        run: npx tsc --noEmit
+
+      - name: Run unit tests
+        run: npm test
+
+      - name: Build (static export)
+        run: npm run build
