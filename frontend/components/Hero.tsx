@@ -79,20 +79,21 @@ export default function Hero() {
 
             {/* Trust indicators */}
             <div className="pt-2 flex items-center gap-6 text-slate-500 font-mono text-[12px]">
-              <div className="flex items-center gap-2">
-                <span className="material-symbols-outlined text-emerald-600 text-[16px]">
-                  verified
+              <div className="flex items-center gap-2" title="Auditoría externa pendiente — prototipo revisado internamente">
+                <span className="material-symbols-outlined text-amber-600 text-[16px]">
+                  shield
                 </span>
                 <span className="font-medium text-slate-600">
-                  Smart Contracts Auditados
+                  Auditoría pendiente
                 </span>
+                <span className="px-1 py-0.5 rounded bg-amber-50 border border-amber-200 text-amber-700 text-[9px]">Security-reviewed prototype</span>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2" title="Telemetría simulada en testnet">
                 <span className="material-symbols-outlined text-amber-500 text-[16px]">
                   bolt
                 </span>
                 <span className="font-medium text-slate-600">
-                  IoT Telemetría 24/7
+                  IoT • Demo telemetry
                 </span>
               </div>
             </div>
@@ -109,8 +110,8 @@ export default function Hero() {
                     Panel Telemetry HUD
                   </span>
                 </div>
-                <span className="font-mono text-[11px] px-2 py-0.5 rounded bg-emerald-50 border border-emerald-200 text-emerald-700 font-semibold">
-                  LIVE SCP SYNC
+                <span className="font-mono text-[11px] px-2 py-0.5 rounded bg-amber-50 border border-amber-200 text-amber-700 font-semibold" title="Datos simulados en testnet">
+                  DEMO • Testnet
                 </span>
               </div>
 
