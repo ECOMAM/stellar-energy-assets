@@ -1,11 +1,13 @@
 name: Deploy Contract to Testnet
 
+# Despliegue manual del contrato en TESTNET. Nunca se despliega en mainnet
+# (bases del evento, regla 8.5).
+# Requiere el secret del repositorio DEPLOYER_SECRET, que debe ser una clave de TESTNET.
+# La clave nunca se pasa como argumento de linea de comandos ni como input del
+# workflow: se escribe en el keystore del Stellar CLI con un builtin de bash
+# (printf no crea un proceso con la clave en argv) y se firma con el alias.
 on:
   workflow_dispatch:
-    inputs:
-      secret_key:
-        description: 'Deployer secret key (stored as repo secret DEPLOYER_SECRET)'
-        required: false
 
 jobs:
   deploy:
@@ -13,84 +15,71 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
+      # Mismo toolchain que la CI, para que el hash del wasm sea reproducible
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@master
         with:
+          toolchain: 1.98.1
           targets: wasm32v1-none
 
-      - name: Install Stellar CLI
-        run: cargo install --locked stellar-cli --features opt
-
       - name: Cache Cargo
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+        uses: Swatinem/rust-cache@v2
 
-      - name: Build Contract
+      - name: Install Stellar CLI 28.0.0
         run: |
-          cd contracts/niko_project
+          mkdir -p "$RUNNER_TEMP/stellar-cli"
+          curl -sSfL https://github.com/stellar/stellar-cli/releases/download/v28.0.0/stellar-cli-28.0.0-x86_64-unknown-linux-gnu.tar.gz \
+            | tar -xz -C "$RUNNER_TEMP/stellar-cli"
+          BIN="$(find "$RUNNER_TEMP/stellar-cli" -type f -name stellar | head -1)"
+          chmod +x "$BIN"
+          echo "$(dirname "$BIN")" >> "$GITHUB_PATH"
+          "$BIN" --version
+
+      # En un workspace, `stellar contract build` deja el wasm en el target/ de la raiz
+      - name: Build contract
+        run: |
           stellar contract build
+          sha256sum target/wasm32v1-none/release/niko_project.wasm
 
-      - name: Optimize WASM
-        run: |
-          soroban contract optimize --wasm contracts/niko_project/target/wasm32v1-none/release/niko_project.wasm --output niko_project_opt.wasm 2>/dev/null || \
-          cp contracts/niko_project/target/wasm32v1-none/release/niko_project.wasm niko_project_opt.wasm
-          ls -la niko_project_opt.wasm
-
-      - name: Deploy to Testnet
+      - name: Import deployer key into the CLI keystore
         env:
           DEPLOYER_SECRET: ${{ secrets.DEPLOYER_SECRET }}
         run: |
-          # Native XLM Stellar Asset Contract on the target network
+          mkdir -p "$HOME/.config/stellar/identity"
+          printf 'secret_key = "%s"\n' "$DEPLOYER_SECRET" > "$HOME/.config/stellar/identity/deployer.toml"
+          chmod 600 "$HOME/.config/stellar/identity/deployer.toml"
+          echo "Deployer: $(stellar keys address deployer)"
+
+      - name: Deploy to testnet
+        run: |
           NATIVE_TOKEN=$(stellar contract id asset --asset native --network testnet)
-          # Deployer public key; `stellar keys public-key` accepts a raw secret key
-          DEPLOYER_PUBLIC=$(stellar keys public-key "$DEPLOYER_SECRET")
-          echo "DEPLOYER_PUBLIC=$DEPLOYER_PUBLIC" >> $GITHUB_ENV
+          ADMIN=$(stellar keys address deployer)
           CONTRACT_ID=$(stellar contract deploy \
-            --wasm niko_project_opt.wasm \
-            --source "$DEPLOYER_SECRET" \
+            --wasm target/wasm32v1-none/release/niko_project.wasm \
+            --source-account deployer \
             --network testnet \
-            --alias niko-sun \
             -- \
-            --admin "$DEPLOYER_PUBLIC" \
+            --admin "$ADMIN" \
             --token "$NATIVE_TOKEN")
-          echo "Deployed contract: $CONTRACT_ID"
-          echo "CONTRACT_ID=$CONTRACT_ID" >> $GITHUB_ENV
+          echo "CONTRACT_ID=$CONTRACT_ID" >> "$GITHUB_ENV"
+          {
+            echo "### Contrato desplegado en testnet"
+            echo "- Contract ID: \`$CONTRACT_ID\`"
+            echo "- Explorer: https://stellar.expert/explorer/testnet/contract/$CONTRACT_ID"
+            echo "- Admin: \`$ADMIN\`"
+          } >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Create Project #1
-        env:
-          DEPLOYER_SECRET: ${{ secrets.DEPLOYER_SECRET }}
+      # Los proyectos solo los crean emisores verificados por el admin (set_issuer).
+      # El ciclo de demo se corre en local con scripts/demo-cycle.sh.
+      - name: Next steps
         run: |
-          DEPLOYER_ADDRESS="${{ env.DEPLOYER_PUBLIC }}"
-          stellar contract invoke \
-            --id ${{ env.CONTRACT_ID }} \
-            --source "$DEPLOYER_SECRET" \
-            --network testnet \
-            -- create_project \
-            --creator "$DEPLOYER_ADDRESS" \
-            --name '"Solar Lima Miraflores"' \
-            --total_supply 100000 \
-            --price 10000000 \
-            --min_purchase 1
+          echo "Contract ID: $CONTRACT_ID"
+          echo "1) Frontend: NEXT_PUBLIC_CONTRACT_ID=$CONTRACT_ID"
+          echo "2) Ciclo on-chain de demo: CONTRACT_ID=$CONTRACT_ID scripts/demo-cycle.sh"
 
-      - name: Print Result
-        run: |
-          echo "============================================"
-          echo "CONTRACT DEPLOYED AND INITIALIZED"
-          echo "Contract ID: ${{ env.CONTRACT_ID }}"
-          echo "============================================"
-          echo ""
-          echo "Update frontend/app/project/[id]/page.tsx"
-          echo "with the new contract ID."
-
-      - name: Upload artifact
+      - name: Upload wasm
         uses: actions/upload-artifact@v4
         with:
-          name: deployed-contract
-          path: |
-            niko_project_opt.wasm
+          name: niko-project-wasm
+          path: target/wasm32v1-none/release/niko_project.wasm
           retention-days: 30

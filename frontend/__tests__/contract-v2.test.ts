@@ -86,12 +86,14 @@ describe("encodeContractArgs (v2 signatures)", () => {
 // ═══════════════════════════════════════════════════════════
 
 describe("contract error map", () => {
-  it("covers codes 1..14 with the names of the Rust enum", () => {
-    expect(Object.keys(CONTRACT_ERRORS).map(Number)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]);
+  it("covers codes 1..15 with the names of the Rust enum", () => {
+    expect(Object.keys(CONTRACT_ERRORS).map(Number)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]);
     expect(CONTRACT_ERRORS[1].name).toBe("NotAdmin");
     expect(CONTRACT_ERRORS[4].name).toBe("NotParticipant");
     expect(CONTRACT_ERRORS[10].name).toBe("InsufficientSupply");
+    expect(CONTRACT_ERRORS[11].name).toBe("InsufficientBalance");
     expect(CONTRACT_ERRORS[14].name).toBe("RewardTooSmall");
+    expect(CONTRACT_ERRORS[15].name).toBe("InvalidName");
   });
 
   it("parses Error(Contract, #N) from simulation text and Error objects", () => {

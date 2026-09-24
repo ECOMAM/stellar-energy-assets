@@ -45,7 +45,11 @@ export const CONTRACT_ERRORS: Readonly<Record<number, ContractErrorInfo>> = {
     name: "InsufficientSupply",
     message: "No queda suficiente supply disponible en el proyecto para esa cantidad.",
   },
-  11: { name: "InsufficientBalance", message: "El monto supera el saldo de ventas disponible del proyecto." },
+  11: {
+    name: "InsufficientBalance",
+    message:
+      "Saldo insuficiente: el monto supera el XLM disponible en la cuenta o, en un retiro, el saldo de ventas del proyecto.",
+  },
   12: {
     name: "NoTokensMinted",
     message: "Aún no hay participaciones emitidas en este proyecto: todavía no se pueden depositar ingresos.",
@@ -56,6 +60,7 @@ export const CONTRACT_ERRORS: Readonly<Record<number, ContractErrorInfo>> = {
     message:
       "El depósito es demasiado pequeño para repartirse entre las participaciones emitidas. Deposita un monto mayor.",
   },
+  15: { name: "InvalidName", message: "El nombre del proyecto no puede estar vacío ni superar los 64 bytes." },
 };
 
 /** Extract N from "Error(Contract, #N)" in an error, message or object. */
