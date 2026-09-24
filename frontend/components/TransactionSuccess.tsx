@@ -17,7 +17,6 @@ interface TransactionSuccessProps {
   projectFlag: string;
   assetId: string;
   walletAddress: string;
-  apy: number;
   capacityWp: number;
   contractId: string;
 }
@@ -47,7 +46,6 @@ export default function TransactionSuccess({
   projectFlag,
   assetId,
   walletAddress,
-  apy,
   capacityWp,
   contractId,
 }: TransactionSuccessProps) {
@@ -56,8 +54,6 @@ export default function TransactionSuccess({
 
   if (!open) return null;
 
-  const dailyYield = (costXlm * apy) / 100 / 365;
-  const monthlyYield = dailyYield * 30;
   const co2Kg = tokenCount * 0.32 * 1000; // ~0.32 ton per token per year → kg
   const usufId = `SLN-USUF-${String(Math.floor(Math.random() * 9999)).padStart(4, "0")}`;
 
@@ -102,7 +98,7 @@ export default function TransactionSuccess({
               Operación RWA Liquidada
             </span>
             <h1 className="font-display text-[26px] font-bold text-slate-900 mb-3">
-              ¡Inversión Confirmada y Liquidada con Éxito!
+              ¡Participación Confirmada y Liquidada con Éxito!
             </h1>
             <p className="text-[14px] text-slate-600 max-w-lg leading-relaxed">
               Has adquirido participación patrimonial directa en el{" "}
@@ -328,22 +324,22 @@ export default function TransactionSuccess({
                   </span>
                   <div className="flex flex-col">
                     <span className="text-[11px] text-slate-500 uppercase">
-                      Rendimiento Proyectado
+                      Potencia Solar Respaldada
                     </span>
                     <span className="text-[14px] text-slate-900 font-bold font-mono">
-                      {apy}% APY (~{monthlyYield.toFixed(2)} XLM/mes)
+                      {capacityWp.toFixed(1)} Wp
                     </span>
                   </div>
                 </div>
               </div>
 
-              {/* Next dividend card */}
+              {/* Next revenue distribution card */}
               <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 flex flex-col">
                 <h4 className="text-[15px] font-bold text-slate-900 mb-3 flex items-center gap-2">
                   <span className="material-symbols-outlined text-emerald-600 text-xl">
                     schedule
                   </span>
-                  Próxima Dispersión de Flujo
+                  Próxima Distribución de Ingresos
                 </h4>
                 <div className="flex items-center justify-between p-3.5 rounded-lg bg-slate-50 mb-3 border border-slate-100">
                   <div className="flex flex-col">

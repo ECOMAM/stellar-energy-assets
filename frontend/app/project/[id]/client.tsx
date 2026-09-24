@@ -16,7 +16,6 @@ const PROJECT = {
   location: "Comas / Los Olivos, Lima",
   coords: "-11.9561, -77.0537",
   capacityKwp: 150,
-  apy: 12.5,
   pricePerToken: 10, // XLM
   tokenWp: 1.5, // 1 token = 1.5 Wp
   monthlyProductionKwh: 45200, // 45.2 MWh
@@ -39,21 +38,21 @@ const DIVIDENDS = [
     fecha: "Sep 2026",
     kwh: "4,520",
     total: "4,250 XLM",
-    rendimiento: "0.05 XLM/token",
+    porToken: "0.05 XLM/token",
     hash: "a3f8...9c2d",
   },
   {
     fecha: "Ago 2026",
     kwh: "4,310",
     total: "3,980 XLM",
-    rendimiento: "0.047 XLM/token",
+    porToken: "0.047 XLM/token",
     hash: "b7e1...4f8a",
   },
   {
     fecha: "Jul 2026",
     kwh: "3,980",
     total: "3,620 XLM",
-    rendimiento: "0.043 XLM/token",
+    porToken: "0.043 XLM/token",
     hash: "c2d9...7b3e",
   },
 ];
@@ -92,7 +91,7 @@ export default function ProjectDetailClient({ id }: { id?: string }) {
     readContract,
   } = useWallet();
 
-  /* ── Investment calculator state ── */
+  /* ── Purchase calculator state ── */
   const [currency, setCurrency] = useState<"XLM" | "USDC">("XLM");
   const [tokenCount, setTokenCount] = useState<number>(1);
 
@@ -221,8 +220,6 @@ export default function ProjectDetailClient({ id }: { id?: string }) {
   const costXlm = tokenCount * pricePerToken;
   const costUsd = costXlm * XLM_TO_USD;
   const capacityAdjudicada = tokenCount * displayProject.tokenWp;
-  const retornoDiario = (costXlm * displayProject.apy) / 365;
-  const retornoAnual = costXlm * (displayProject.apy / 100);
   const co2Mitigado = tokenCount * 0.32; // ~0.32 ton CO2 per token per year
 
   /* ── Handle buy: opens modal, then executes on confirm ── */
@@ -414,7 +411,7 @@ export default function ProjectDetailClient({ id }: { id?: string }) {
           <p className="mt-2 max-w-2xl text-[14px] leading-relaxed text-slate-600">
             Parque solar fotovoltaico de 150 kWp en Lima Norte, con Power
             Purchase Agreement (PPA) a 10 a&ntilde;os. Producci&oacute;n verificada por IoT
-            en tiempo real, dividendos distribuidos on-chain via smart contracts
+            en tiempo real, ingresos distribuidos on-chain via smart contracts
             Soroban en la red Stellar.
           </p>
 
@@ -453,9 +450,9 @@ export default function ProjectDetailClient({ id }: { id?: string }) {
               bg: "bg-emerald-50",
             },
             {
-              icon: "trending_up",
-              label: "APY",
-              value: "12.5%",
+              icon: "confirmation_number",
+              label: "Tokens Vendidos",
+              value: displayProject.soldSupply.toLocaleString("en-US"),
               color: "text-emerald-600",
               bg: "bg-emerald-50",
             },
@@ -779,13 +776,13 @@ export default function ProjectDetailClient({ id }: { id?: string }) {
                   {
                     icon: "account_balance",
                     title: "Fideicomiso Bancario",
-                    desc: "Banco de Cr\u00E9dito del Per\u00FA (BCP). Fondo fiduciario segregado para distribuci\u00F3n de dividendos a token holders.",
+                    desc: "Banco de Cr\u00E9dito del Per\u00FA (BCP). Fondo fiduciario segregado para distribuci\u00F3n de ingresos a token holders.",
                     accent: "border-l-blue-500",
                   },
                   {
                     icon: "verified",
                     title: "Auditor\u00EDa T\u00E9cnica DNV",
-                    desc: "DNV GL certificada. Inspecci\u00F3n semestral de paneles, inversores y medici\u00F3n IoT independiente.",
+                    desc: "DNV GL certificada. Inspecci\u00F3n semestral de paneles, equipos de conversi\u00F3n y medici\u00F3n IoT independiente.",
                     accent: "border-l-orange-500",
                   },
                 ].map((item, i) => (
@@ -810,7 +807,7 @@ export default function ProjectDetailClient({ id }: { id?: string }) {
             {/* Dividend Distribution table */}
             <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
               <h3 className="mb-4 font-display text-[16px] font-bold text-slate-900">
-                Distribuci&oacute;n de Dividendos
+                Distribuci&oacute;n de Ingresos
               </h3>
               <div className="overflow-x-auto">
                 <table className="w-full text-left text-[13px]">
@@ -826,7 +823,7 @@ export default function ProjectDetailClient({ id }: { id?: string }) {
                         Total
                       </th>
                       <th className="pb-2 pr-4 font-semibold text-slate-500">
-                        Rendimiento/Token
+                        Ingresos/Token
                       </th>
                       <th className="pb-2 font-semibold text-slate-500">
                         Hash Stellar
@@ -849,7 +846,7 @@ export default function ProjectDetailClient({ id }: { id?: string }) {
                           {d.total}
                         </td>
                         <td className="py-3 pr-4 font-mono text-slate-700">
-                          {d.rendimiento}
+                          {d.porToken}
                         </td>
                         <td className="py-3">
                           <span className="inline-flex items-center gap-1 rounded bg-slate-100 px-2 py-0.5 font-mono text-[12px] text-slate-600">
@@ -905,19 +902,19 @@ export default function ProjectDetailClient({ id }: { id?: string }) {
           {/* ──── RIGHT COLUMN (4 cols, sticky) ──── */}
           <div className="lg:col-span-4">
             <div className="sticky top-20 space-y-4">
-              {/* Investment widget card */}
+              {/* Purchase widget card */}
               <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-lg">
                 {/* Card header */}
                 <div className="border-b border-slate-100 bg-gradient-to-r from-emerald-50 to-orange-50 px-6 py-4">
                   <div className="flex items-center justify-between">
                     <span className="font-display text-[14px] font-bold text-slate-900">
-                      Inversi&oacute;n Directa Soroban
+                      Participaci&oacute;n Directa Soroban
                     </span>
                     <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-bold text-emerald-700">
                       <span className="material-symbols-outlined text-[12px]">
-                        trending_up
+                        token
                       </span>
-                      12.5% APY
+                      {displayProject.pricePerToken} XLM/token
                     </span>
                   </div>
                 </div>
@@ -994,15 +991,9 @@ export default function ProjectDetailClient({ id }: { id?: string }) {
                     </span>
                   </div>
                   <div className="flex justify-between text-[13px]">
-                    <span className="text-slate-500">Retorno Diario</span>
+                    <span className="text-slate-500">Precio por Token</span>
                     <span className="font-mono font-bold text-emerald-600">
-                      {fmt(retornoDiario)} XLM
-                    </span>
-                  </div>
-                  <div className="flex justify-between text-[13px]">
-                    <span className="text-slate-500">Retorno Anual</span>
-                    <span className="font-mono font-bold text-emerald-600">
-                      {fmt(retornoAnual)} XLM
+                      {fmt(pricePerToken, 2)} XLM
                     </span>
                   </div>
                   <div className="flex justify-between text-[13px]">
@@ -1099,8 +1090,8 @@ export default function ProjectDetailClient({ id }: { id?: string }) {
                   </span>
                 </div>
                 <p className="mb-3 text-[12px] leading-relaxed text-slate-500">
-                  Inversores institucionales: contáctanos para allocations
-                  dedicados, estructura legal personalizada y onboarding
+                  Emisores de proyectos solares: contáctanos para integraciones
+                  dedicadas, estructura legal personalizada y onboarding
                   corporativo.
                 </p>
                 <button className="w-full rounded-lg border border-slate-200 bg-white py-2 text-[12px] font-semibold text-slate-700 transition-all hover:bg-slate-50">
@@ -1129,7 +1120,6 @@ export default function ProjectDetailClient({ id }: { id?: string }) {
         tokenCount={tokenCount}
         costXlm={costXlm}
         costUsd={costUsd}
-        apy={displayProject.apy}
         capacityWp={capacityAdjudicada}
         walletAddress={address || ""}
         walletBalance={balance}
@@ -1152,7 +1142,6 @@ export default function ProjectDetailClient({ id }: { id?: string }) {
         projectFlag={displayProject.flag}
         assetId={displayProject.assetId}
         walletAddress={address || ""}
-        apy={displayProject.apy}
         capacityWp={capacityAdjudicada}
         contractId={CONTRACT_ID}
       />

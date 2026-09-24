@@ -17,7 +17,7 @@ export default function Footer() {
             </div>
             <p className="text-[13px] text-slate-600 max-w-md leading-relaxed">
               Descentralizando la titularidad de activos solares en América
-              Latina. Democratizamos la inversión en energía limpia con
+              Latina. Democratizamos el acceso a la energía limpia con
               liquidación instantánea respaldada en Stellar.
             </p>
             <div className="font-mono text-[12px] text-emerald-700 font-semibold">
@@ -54,7 +54,7 @@ export default function Footer() {
               href="#"
               className="text-[13px] text-slate-600 hover:text-emerald-700 transition-colors"
             >
-              Calculadora de Yield
+              Calculadora de Energía
             </a>
           </div>
 
@@ -99,17 +99,18 @@ export default function Footer() {
         {/* Legal disclaimer */}
         <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 text-slate-600 font-mono text-[11px] leading-relaxed">
           <strong className="text-slate-900 font-semibold">
-            Aviso de Riesgo y Descargo Legal RWA:
+            Aviso Legal RWA:
           </strong>{" "}
+          Demo en Stellar testnet con activos y datos simulados. Sin fondos reales. No es una oferta de inversión ni promete retornos.{" "}
           La adquisición de tokens representativos de infraestructura solar
-          fotovoltaica implica riesgos de rendimiento operativo, condiciones
-          climáticas fluctuantes de irradiación y riesgos inherentes a la
-          tecnología blockchain de Stellar Network. Los rendimientos proyectados
-          (APY) se basan en contratos de compraventa de energía (PPA) y
-          promedios históricos de producción, no constituyen una garantía
-          bancaria de retorno de inversión. Verifique la legislación aplicable
-          en su jurisdicción antes de comprometer fondos en activos reales
-          tokenizados (Real-World Assets).
+          fotovoltaica está sujeta a condiciones climáticas fluctuantes de
+          irradiación y a riesgos inherentes a la tecnología blockchain de
+          Stellar Network. La tokenización es un mecanismo de registro y
+          reparto proporcional on-chain de los ingresos operativos generados
+          por cada planta, conforme a los contratos de compraventa de energía
+          (PPA) y a los términos del contrato inteligente. Verifique la
+          legislación aplicable en su jurisdicción antes de interactuar con
+          activos tokenizados (Real-World Assets).
         </div>
       </div>
     </footer>

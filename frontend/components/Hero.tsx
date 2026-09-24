@@ -26,13 +26,13 @@ export default function Hero() {
 
             {/* Headline */}
             <h1 className="font-display text-[28px] leading-[36px] lg:text-[56px] lg:leading-[64px] text-slate-900 tracking-tight font-bold max-w-2xl">
-              Invierte en{" "}
+              Participa en{" "}
               <span className="text-transparent bg-clip-text bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600">
                 Energía Solar
               </span>
-              . Gana{" "}
+              . Energía Real,{" "}
               <span className="text-transparent bg-clip-text bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700">
-                Dividendos Reales
+                Trazable On-Chain
               </span>
               .
             </h1>
@@ -55,7 +55,7 @@ export default function Hero() {
             <p className="font-body text-[14px] leading-[22px] lg:text-[16px] lg:leading-[26px] text-slate-600 max-w-xl">
               Tokeniza proyectos solares en Stellar. Compra fracciones de paneles
               solares fotovoltaicos, genera energía limpia verificada por IoT y
-              reclama tus recompensas on-chain instantáneamente en USDC y XLM.
+              reclama tu parte de los ingresos por energía on-chain instantáneamente en USDC y XLM.
             </p>
 
             {/* CTAs */}
@@ -76,6 +76,11 @@ export default function Hero() {
                 <span>Conectar Freighter / Lobstr</span>
               </button>
             </div>
+
+            {/* Compliance disclaimer */}
+            <p className="text-[11px] leading-relaxed text-slate-400 max-w-md">
+              Demo en Stellar testnet con activos y datos simulados. Sin fondos reales. No es una oferta de inversión ni promete retornos.
+            </p>
 
             {/* Trust indicators */}
             <div className="pt-2 flex items-center gap-6 text-slate-500 font-mono text-[12px]">
@@ -180,7 +185,7 @@ export default function Hero() {
                     </span>
                     <div className="flex flex-col">
                       <span className="text-[13px] text-slate-800 font-medium">
-                        Yield Auto-Dispersado
+                        Distribución Automática de Ingresos
                       </span>
                       <span className="font-mono text-[12px] text-slate-500">
                         Block #51829402 • 1.4s ago

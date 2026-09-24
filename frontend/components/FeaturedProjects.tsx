@@ -11,7 +11,6 @@ const fallbackProjects = [
     location: "Lima, Perú",
     flag: "🇵🇪",
     asset: "SUN-LIMA",
-    apy: "12.5%",
     description:
       "Planta fotovoltaica en techo industrial con contrato PPA privado a 10 años firmado con distribuidora local.",
     capacity: "150 kWp",
@@ -28,7 +27,6 @@ const fallbackProjects = [
     location: "Arequipa, Perú",
     flag: "🇵🇪",
     asset: "SUN-AQP",
-    apy: "14.2%",
     description:
       "Parque solar terrestre en zona de máxima irradiancia global con seguidores de eje simple y conexión a subestación.",
     capacity: "320 kWp",
@@ -45,7 +43,6 @@ const fallbackProjects = [
     location: "Cusco, Perú",
     flag: "🇵🇪",
     asset: "SUN-CUSCO",
-    apy: "11.8%",
     description:
       "Microred comunitaria y eco-resort con respaldo de baterías LFP y tarifa fija indexada a la inflación energética.",
     capacity: "80 kWp",
@@ -207,12 +204,11 @@ export default function FeaturedProjects() {
               />
               <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent" />
 
-              {/* APY pill */}
+              {/* Price pill */}
               <div className="absolute top-4 right-4 px-4 py-1 rounded-full bg-white/95 border border-emerald-200 shadow-md flex items-center gap-2">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-600 animate-ping" />
-                <span className="font-mono text-[12px] font-bold text-emerald-700" title="Proyección PPA, no garantizada">
-                  {p.apy} APY
-                  <sup className="ml-1 text-[9px] font-normal text-slate-500">*Estimado</sup>
+                <span className="font-mono text-[12px] font-bold text-emerald-700" title="Precio por token">
+                  {p.price} / token
                 </span>
               </div>
 
@@ -279,7 +275,7 @@ export default function FeaturedProjects() {
                 href={`/project/${p.id}`}
                 className="w-full h-11 rounded-lg bg-secondary text-white text-[13px] font-semibold shadow-md shadow-orange-500/20 hover:bg-orange-600 transition-all flex items-center justify-center gap-2"
               >
-                <span>Invertir Ahora</span>
+                <span>Participar Ahora</span>
                 <span className="material-symbols-outlined text-[18px]">
                   bolt
                 </span>

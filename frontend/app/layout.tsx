@@ -5,7 +5,7 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: "NIKO SUN — Solar Energy RWA on Stellar",
   description:
-    "Tokenize solar energy projects. Invest in renewables on Stellar.",
+    "Tokenize solar energy projects and track energy revenue on Stellar. Testnet demo with simulated assets — no real funds.",
   icons: { icon: "/favicon.svg" },
 };
 

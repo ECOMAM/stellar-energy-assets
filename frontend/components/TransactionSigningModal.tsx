@@ -21,14 +21,13 @@ interface SigningModalProps {
     | "wallet_missing";
   /** Error message when phase is error */
   errorMessage?: string;
-  /* ── Investment data ── */
+  /* ── Purchase data ── */
   projectName: string;
   projectFlag: string;
   assetId: string;
   tokenCount: number;
   costXlm: number;
   costUsd: number;
-  apy: number;
   capacityWp: number;
   /* ── Wallet data ── */
   walletAddress: string;
@@ -131,7 +130,6 @@ export default function TransactionSigningModal({
   tokenCount,
   costXlm,
   costUsd,
-  apy,
   capacityWp,
   walletAddress,
   walletBalance,
@@ -158,9 +156,6 @@ export default function TransactionSigningModal({
   }, [open, isTerminal, onClose]);
 
   if (!open) return null;
-
-  const dailyYield = (costXlm * apy) / 100 / 365;
-  const monthlyYield = dailyYield * 30;
 
   return (
     <div
@@ -221,7 +216,7 @@ export default function TransactionSigningModal({
 
         {/* ── Body ── */}
         <div className="p-6 sm:p-8 space-y-6 max-h-[75vh] overflow-y-auto">
-          {/* 1. Investment summary */}
+          {/* 1. Purchase summary */}
           <div className="rounded-xl p-5 bg-slate-50 border border-slate-200 space-y-4">
             <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 pb-3">
               <div className="flex items-center gap-2">
@@ -261,13 +256,13 @@ export default function TransactionSigningModal({
               </div>
               <div className="p-3 bg-white rounded-lg border border-slate-200">
                 <span className="text-[11px] font-semibold text-slate-500 block uppercase tracking-wide">
-                  Rendimiento Estimado
+                  Precio por Token
                 </span>
                 <span className="font-mono text-[16px] font-bold text-emerald-600 block mt-0.5">
-                  {apy}% APY
+                  {(costXlm / tokenCount).toFixed(2)} XLM
                 </span>
-                <span className="text-[11px] text-emerald-600 font-medium">
-                  ~{dailyYield.toFixed(2)} XLM / día
+                <span className="text-[11px] text-slate-500">
+                  {tokenCount} {tokenCount === 1 ? "token" : "tokens"}
                 </span>
               </div>
             </div>
@@ -406,7 +401,7 @@ export default function TransactionSigningModal({
                   Firma Cancelada
                 </h4>
                 <p className="text-[13px] text-amber-800 leading-relaxed">
-                  Cerraste la ventana de Freighter sin firmar. Tu inversión no
+                  Cerraste la ventana de Freighter sin firmar. Tu participación no
                   fue procesada. Puedes intentar nuevamente cuando estés listo.
                 </p>
               </div>
