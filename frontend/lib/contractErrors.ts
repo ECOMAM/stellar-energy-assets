@@ -67,7 +67,8 @@ export type TxErrorKind =
   | "try_again_later"
   | "send_error"
   | "failed"
-  | "unknown_status";
+  | "unknown_status"
+  | "signer_mismatch";
 
 /**
  * Failure of a signed contract call. The message is ready to show (Spanish;

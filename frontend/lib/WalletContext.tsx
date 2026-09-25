@@ -13,8 +13,9 @@ import {
   useState,
 } from "react";
 
-import { HORIZON_URL } from "./contract";
-import { connectFreighter, restoreFreighterAddress } from "./freighter";
+import { HORIZON_URL, NETWORK_PASSPHRASE } from "./contract";
+import { connectFreighter, restoreFreighterAddress, watchFreighterChanges } from "./freighter";
+import { clearReadCache } from "./readCache";
 import { sendContractCall, type ContractCallResult } from "./transactions";
 
 interface WalletState {
@@ -23,7 +24,19 @@ interface WalletState {
   network: string;
   connected: boolean;
   connecting: boolean;
+  /** Short-lived notice shown after Freighter reports the connected account changed. */
+  accountChangeNotice: string | null;
+  /** Set while Freighter is connected to a network other than testnet; null otherwise. */
+  networkWarning: string | null;
 }
+
+/** "GABC…WXYZ": short form used in the account-change notice. */
+function shortAddress(address: string): string {
+  return `${address.slice(0, 1)}…${address.slice(-4)}`;
+}
+
+/** How long the account-change notice stays visible before auto-clearing. */
+const ACCOUNT_CHANGE_NOTICE_MS = 6_000;
 
 export type SignAndSendOptions = {
   /** Called once Freighter returned the signature, before the transaction is sent. */
@@ -64,6 +77,8 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     network: "",
     connected: false,
     connecting: false,
+    accountChangeNotice: null,
+    networkWarning: null,
   });
 
   // Mark as mounted on client only
@@ -115,6 +130,8 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       network: "",
       connected: false,
       connecting: false,
+      accountChangeNotice: null,
+      networkWarning: null,
     });
   }, []);
 
@@ -148,6 +165,63 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (mounted && state.address) fetchBalance();
   }, [mounted, state.address, fetchBalance]);
+
+  // Auto-clear the account-change notice a few seconds after it appears.
+  useEffect(() => {
+    if (!state.accountChangeNotice) return;
+    const timer = setTimeout(() => {
+      setState((s) => (s.accountChangeNotice ? { ...s, accountChangeNotice: null } : s));
+    }, ACCOUNT_CHANGE_NOTICE_MS);
+    return () => clearTimeout(timer);
+  }, [state.accountChangeNotice]);
+
+  // Watch Freighter for account/network changes while connected (client-only).
+  // `state.address` is deliberately left out of the dependency array: once
+  // running, this effect (via the watcher's callback below) is the only thing
+  // that moves `state.address` while connected, so restarting it on every
+  // address change would just tear down and recreate the same watcher.
+  useEffect(() => {
+    if (!mounted || !state.connected) return;
+
+    let knownAddress = state.address ?? "";
+    let firstTick = true;
+
+    const stopWatching = watchFreighterChanges(
+      (change) => {
+        // The watcher's very first callback just reports the state Freighter
+        // was already in when we started watching (not a real switch): only
+        // later callbacks with a different address are an actual account change.
+        const addressChanged = !firstTick && !!change.address && change.address !== knownAddress;
+        if (change.address) knownAddress = change.address;
+        firstTick = false;
+
+        // Stale simulations/reads must not survive an account switch.
+        if (addressChanged) clearReadCache();
+
+        const offTestnet = !!change.networkPassphrase && change.networkPassphrase !== NETWORK_PASSPHRASE;
+
+        setState((s) => ({
+          ...s,
+          address: change.address || s.address,
+          accountChangeNotice: addressChanged
+            ? `Cuenta de Freighter cambiada a ${shortAddress(change.address)}.`
+            : s.accountChangeNotice,
+          networkWarning: offTestnet
+            ? `Freighter está conectado a otra red${change.network ? ` (${change.network})` : ""}. Esta demo funciona solo en Stellar Testnet.`
+            : null,
+        }));
+      },
+      {
+        onError: (message) => {
+          // Extension locked or briefly unreachable: keep the last known
+          // state and just log it, rather than clobbering address/network.
+          console.warn("Freighter watch error:", message);
+        },
+      }
+    );
+
+    return stopWatching;
+  }, [mounted, state.connected]);
 
   // createElement rather than JSX: vitest inherits `jsx: preserve` from
   // tsconfig, and this keeps the provider testable (__tests__/wallet-context.test.ts).

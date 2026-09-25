@@ -4,13 +4,41 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 // freighter-api 6 wrappers: result objects, rejections, timeouts
 // ═══════════════════════════════════════════════════════════
 
-const freighter = vi.hoisted(() => ({
-  getNetworkDetails: vi.fn(),
-  signTransaction: vi.fn(),
-  isConnected: vi.fn(),
-  requestAccess: vi.fn(),
-  getAddress: vi.fn(),
-}));
+const freighter = vi.hoisted(() => {
+  // Minimal fake of freighter-api 6's WatchWalletChanges: records every
+  // instance created so tests can grab the latest one, hand it a synthetic
+  // tick via `.cb(...)`, and assert `.stopped` after stop()/unmount.
+  const watchInstances: Array<{
+    timeout: number;
+    cb: ((params: { address: string; network: string; networkPassphrase: string; error?: { code: number; message: string } }) => void) | null;
+    stopped: boolean;
+  }> = [];
+  class WatchWalletChanges {
+    timeout: number;
+    cb: ((params: { address: string; network: string; networkPassphrase: string; error?: { code: number; message: string } }) => void) | null = null;
+    stopped = false;
+    constructor(timeout = 3000) {
+      this.timeout = timeout;
+      watchInstances.push(this);
+    }
+    watch(cb: NonNullable<(typeof watchInstances)[number]["cb"]>) {
+      this.cb = cb;
+      return {};
+    }
+    stop() {
+      this.stopped = true;
+    }
+  }
+  return {
+    getNetworkDetails: vi.fn(),
+    signTransaction: vi.fn(),
+    isConnected: vi.fn(),
+    requestAccess: vi.fn(),
+    getAddress: vi.fn(),
+    WatchWalletChanges,
+    watchInstances,
+  };
+});
 
 vi.mock("@stellar/freighter-api", () => freighter);
 
@@ -22,9 +50,11 @@ import {
   connectFreighter,
   restoreFreighterAddress,
   signWithFreighter,
+  watchFreighterChanges,
 } from "@/lib/freighter";
 
 const ADDR = "GBTNEHEDUS7X7MEU2RNAXLH5B52TPW44YZDQNFQMU2JPBMCXAXZ4LOUD";
+const OTHER_ADDR = "GAP552XX3ZGQ7EXSICT7PHVXTK43ZPNVJ6LJZ7HFSZYGNEHEUBM3ST46";
 const TESTNET = "Test SDF Network ; September 2015";
 const PUBLIC = "Public Global Stellar Network ; September 2015";
 const REJECTED_BRANCH = /reject|cancel|declin|denied|Request closed/i;
@@ -33,6 +63,7 @@ const failure = (p: Promise<unknown>) => p.then(() => expect.fail("should have t
 
 beforeEach(() => {
   vi.resetAllMocks();
+  freighter.watchInstances.length = 0;
 });
 
 describe("signWithFreighter", () => {
@@ -42,6 +73,26 @@ describe("signWithFreighter", () => {
     freighter.signTransaction.mockResolvedValue({ signedTxXdr: "SIGNED", signerAddress: ADDR });
     await expect(sign()).resolves.toBe("SIGNED");
     expect(freighter.signTransaction).toHaveBeenCalledWith("AAAA", { networkPassphrase: TESTNET, address: ADDR });
+  });
+
+  it("a signerAddress matching the connected account passes", async () => {
+    freighter.signTransaction.mockResolvedValue({ signedTxXdr: "SIGNED", signerAddress: ADDR });
+    await expect(sign()).resolves.toBe("SIGNED");
+  });
+
+  it("a signerAddress for another account throws signer_mismatch and returns nothing", async () => {
+    freighter.signTransaction.mockResolvedValue({ signedTxXdr: "SIGNED", signerAddress: OTHER_ADDR });
+    const err = await failure(sign());
+    expect(err).toBeInstanceOf(TxError);
+    expect(err.kind).toBe("signer_mismatch");
+    expect(err.message).toContain(OTHER_ADDR);
+    expect(err.message).toMatch(/Vuelve a conectar la cuenta correcta/);
+    expect(describeTxError(err)).toBe(err.message);
+  });
+
+  it("a missing signerAddress (freighter-api build that doesn't return it) is allowed through", async () => {
+    freighter.signTransaction.mockResolvedValue({ signedTxXdr: "SIGNED", signerAddress: "" });
+    await expect(sign()).resolves.toBe("SIGNED");
   });
 
   it("a rejection resolves to { signedTxXdr: '', error } and becomes a rejected error", async () => {
@@ -145,5 +196,41 @@ describe("restoreFreighterAddress (auto-reconnect, no prompt)", () => {
     await expect(restoreFreighterAddress()).resolves.toBe(ADDR);
     freighter.getAddress.mockResolvedValueOnce({ address: "", error: { code: -3, message: "not allowed" } });
     await expect(restoreFreighterAddress()).resolves.toBeNull();
+  });
+});
+
+describe("watchFreighterChanges", () => {
+  it("constructs freighter-api 6's WatchWalletChanges and forwards a tick to the callback", () => {
+    const cb = vi.fn();
+    watchFreighterChanges(cb);
+
+    const watcher = freighter.watchInstances.at(-1);
+    expect(watcher).toBeTruthy();
+    expect(watcher!.timeout).toBe(3000);
+
+    watcher!.cb!({ address: ADDR, network: "TESTNET", networkPassphrase: TESTNET });
+    expect(cb).toHaveBeenCalledWith({ address: ADDR, network: "TESTNET", networkPassphrase: TESTNET });
+  });
+
+  it("routes an error tick to onError instead of the change callback", () => {
+    const cb = vi.fn();
+    const onError = vi.fn();
+    watchFreighterChanges(cb, { onError });
+
+    const watcher = freighter.watchInstances.at(-1)!;
+    watcher.cb!({ address: "", network: "", networkPassphrase: "", error: { code: -1, message: "locked" } });
+
+    expect(cb).not.toHaveBeenCalled();
+    expect(onError).toHaveBeenCalledWith("locked");
+  });
+
+  it("honors a custom interval and stop() delegates to the underlying watcher", () => {
+    const stop = watchFreighterChanges(vi.fn(), { intervalMs: 1000 });
+    const watcher = freighter.watchInstances.at(-1)!;
+    expect(watcher.timeout).toBe(1000);
+    expect(watcher.stopped).toBe(false);
+
+    stop();
+    expect(watcher.stopped).toBe(true);
   });
 });

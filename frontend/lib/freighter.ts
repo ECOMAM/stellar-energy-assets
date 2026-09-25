@@ -8,7 +8,14 @@
  * answers must not leave the UI waiting forever.
  */
 
-import { getAddress, getNetworkDetails, isConnected, requestAccess, signTransaction } from "@stellar/freighter-api";
+import {
+  getAddress,
+  getNetworkDetails,
+  isConnected,
+  requestAccess,
+  signTransaction,
+  WatchWalletChanges,
+} from "@stellar/freighter-api";
 import { TxError } from "./contractErrors";
 
 export const WALLET_TIMEOUT_MS = 20_000;
@@ -44,6 +51,13 @@ function wrongNetwork(network?: string): TxError {
   return new TxError(
     "wrong_network",
     `Freighter está conectado a otra red${network ? ` (${network})` : ""}. Esta demo funciona solo en Stellar testnet: cambia la red de Freighter a Testnet y vuelve a intentarlo. No se envió ninguna transacción.`
+  );
+}
+
+function signerMismatch(signerAddress: string): TxError {
+  return new TxError(
+    "signer_mismatch",
+    `Freighter firmó con otra cuenta (${signerAddress}). Vuelve a conectar la cuenta correcta.`
   );
 }
 
@@ -89,5 +103,59 @@ export async function signWithFreighter(
     if (/network|passphrase/i.test(detail)) throw wrongNetwork();
     throw new TxError("rejected", `Freighter rejected the signature request: ${detail}`);
   }
+  // freighter-api 6.0.1 always includes `signerAddress` on a successful sign
+  // (node_modules/@stellar/freighter-api/src/signTransaction.ts returns
+  // `{ signedTxXdr: req.signedTransaction, signerAddress: req.signerAddress }`
+  // with no error). If it is present and does not match the account we asked
+  // Freighter to sign for, the extension must have switched accounts mid-flow:
+  // stop here and throw, so the mismatched signature is never returned to the
+  // caller and nothing can be submitted with it. If it is missing (undefined
+  // or ""), that is only possible with a freighter-api build that does not
+  // return the field at all — since there is no `error` either, we cannot
+  // tell whether the signer matched, so we conservatively allow the
+  // signature through rather than break signing on a version this app
+  // doesn't control.
+  if (res.signerAddress && res.signerAddress !== opts.address) {
+    throw signerMismatch(res.signerAddress);
+  }
   return res.signedTxXdr;
+}
+
+export type FreighterWalletChange = {
+  address: string;
+  network: string;
+  networkPassphrase: string;
+};
+
+/** Default poll interval for watchFreighterChanges (matches Freighter's own default). */
+export const WATCH_INTERVAL_MS = 3_000;
+
+/**
+ * Watch Freighter for account/network changes using freighter-api 6's
+ * WatchWalletChanges, present in the installed 6.0.1 (see
+ * node_modules/@stellar/freighter-api/src/watchWalletChanges.ts): internally
+ * it polls getAddress/getNetworkDetails every `intervalMs` and calls back
+ * only when something differs from what it last reported — including once
+ * immediately on the first tick, to hand the caller the state at the moment
+ * watching started (callers should treat that first call as a sync, not as
+ * "the user switched"). A tick that failed (e.g. the extension is locked)
+ * reports "" for address/network/passphrase, so it is routed to `onError`
+ * instead of `cb` to avoid callers mistaking it for "switched to no account".
+ *
+ * Returns a stop function; callers must call it on disconnect/unmount so no
+ * watcher (and its recurring setTimeout chain) is left running.
+ */
+export function watchFreighterChanges(
+  cb: (change: FreighterWalletChange) => void,
+  opts: { intervalMs?: number; onError?: (message: string) => void } = {}
+): () => void {
+  const watcher = new WatchWalletChanges(opts.intervalMs ?? WATCH_INTERVAL_MS);
+  watcher.watch((params) => {
+    if (params.error) {
+      opts.onError?.(params.error.message);
+      return;
+    }
+    cb({ address: params.address, network: params.network, networkPassphrase: params.networkPassphrase });
+  });
+  return () => watcher.stop();
 }
