@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { CONTRACT_ID, EXPLORER_URL, TX_EXPLORER } from "@/lib/contract";
 import { fetchContractEvents, parseDepositEvent, type DepositEvent } from "@/lib/events";
 import { parsePurchaseEvent, type PurchaseEvent } from "@/lib/holderIndexer";
+import { projectHref } from "@/lib/projects";
 import { formatXlm } from "@/lib/units";
 
 /** One row of the telemetry HUD activity feed: a real on-chain deposit or purchase event. */
@@ -321,9 +322,12 @@ export default function Hero() {
                           {item.kind === "deposit" ? "+" : ""}
                           {item.amountXlm} XLM
                         </span>
-                        <div className="font-mono text-[11px] text-slate-500 font-medium">
+                        <a
+                          href={projectHref(item.projectId)}
+                          className="block font-mono text-[11px] text-slate-500 font-medium hover:underline hover:text-emerald-700"
+                        >
                           Proyecto #{item.projectId}
-                        </div>
+                        </a>
                       </div>
                     </div>
                   ))
