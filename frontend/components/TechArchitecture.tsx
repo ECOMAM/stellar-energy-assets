@@ -1,0 +1,194 @@
+"use client";
+
+import { useState } from "react";
+import { CONTRACT_ID, EXPLORER_URL } from "@/lib/contract";
+
+const pillars = [
+  {
+    icon: "sensors",
+    title: "Energía anclada on-chain",
+    desc: "El emisor reporta los kWh generados y los ancla en el contrato con update_energy (o junto a cada deposit_revenue). Un oráculo IoT firmado está en el roadmap; hoy no existe.",
+    iconColor: "text-emerald-600",
+  },
+  {
+    icon: "smart_toy",
+    title: "Reparto proporcional de ingresos",
+    desc: "El emisor deposita ingresos en XLM con deposit_revenue; el contrato actualiza un índice por participación y cada participante reclama su parte con claim_revenue cuando quiere.",
+    iconColor: "text-orange-600",
+  },
+  {
+    icon: "security",
+    title: "Reglas de cumplimiento en el contrato",
+    desc: "Solo emisores verificados crean proyectos y solo participantes aprobados (KYC simulado) compran. El admin puede pausar compras y depósitos; reclamos y retiros nunca se bloquean.",
+    iconColor: "text-amber-600",
+  },
+];
+
+export default function TechArchitecture() {
+  const [copied, setCopied] = useState(false);
+  const shortContract = `${CONTRACT_ID.slice(0, 6)}...${CONTRACT_ID.slice(-4)}`;
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(CONTRACT_ID);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // fallback
+    }
+  };
+
+  return (
+    <section id="tech" className="w-full bg-gradient-to-b from-emerald-50/50 to-slate-100/70 border-y border-slate-200 py-16 mt-12">
+      <div className="max-w-7xl mx-auto px-5 lg:px-10">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-10 items-center">
+          {/* Left: Conceptual + Pillars */}
+          <div className="lg:col-span-6 flex flex-col space-y-6">
+            <span className="font-mono text-[11px] uppercase tracking-widest text-orange-700 bg-orange-100 border border-orange-200 px-5 py-2 rounded-full w-fit font-semibold">
+              Arquitectura de Confianza Criptográfica
+            </span>
+            <h2 className="font-display text-[24px] leading-[32px] lg:text-[40px] lg:leading-[48px] text-slate-900 leading-tight font-bold">
+              Soroban Smart Contracts + energía anclada on-chain
+            </h2>
+            <p className="text-[14px] text-slate-600 leading-relaxed">
+              Cada movimiento de XLM (compras, depósitos de ingresos, reclamos y
+              retiros) y cada kWh reportado queda registrado en el contrato
+              Soroban y emite un evento verificable en Stellar testnet. Hoy los
+              kWh los reporta el emisor; la verificación con medidores firmados
+              es parte del roadmap.
+            </p>
+
+            {/* Pillar bullets */}
+            <div className="space-y-5 pt-2">
+              {pillars.map((p, i) => (
+                <div key={i} className="flex items-start gap-4">
+                  <div className="w-10 h-10 rounded-lg bg-white border border-slate-200 flex items-center justify-center shrink-0 shadow-sm">
+                    <span
+                      className={`material-symbols-outlined ${p.iconColor} text-[20px]`}
+                    >
+                      {p.icon}
+                    </span>
+                  </div>
+                  <div>
+                    <h4 className="text-[16px] text-slate-900 font-bold font-display">
+                      {p.title}
+                    </h4>
+                    <p className="text-[13px] text-slate-600 leading-relaxed mt-0.5">
+                      {p.desc}
+                    </p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Right: Code visualizer */}
+          <div className="lg:col-span-6">
+            <div className="rounded-xl bg-white border border-slate-200 p-6 shadow-xl overflow-x-auto font-mono text-[12px] text-slate-700">
+              {/* Window bar */}
+              <div className="flex items-center justify-between pb-3 mb-3 border-b border-slate-100 text-slate-400">
+                <div className="flex items-center gap-2">
+                  <span className="w-3 h-3 rounded-full bg-rose-400" />
+                  <span className="w-3 h-3 rounded-full bg-amber-400" />
+                  <span className="w-3 h-3 rounded-full bg-emerald-400" />
+                  <span className="ml-2 text-[12px] text-slate-800 font-semibold">
+                    niko_project/src/lib.rs
+                  </span>
+                </div>
+                <span className="font-semibold text-slate-500">
+                  Paráfrasis fiel del contrato
+                </span>
+              </div>
+
+              {/* Code: reward-per-token logic of deposit_revenue / claim_revenue */}
+              <div className="space-y-1 leading-relaxed bg-slate-50 p-4 rounded-lg border border-slate-200 text-[12px]">
+                <div className="text-slate-400">
+                  {"// deposit_revenue: solo el creador del proyecto"}
+                </div>
+                <div>
+                  <span className="text-emerald-700 font-bold">let</span> reward_increase = amount * PRECISION / project.minted;
+                </div>
+                <div className="text-slate-700">
+                  token.transfer(&amp;depositor, &amp;contract, &amp;amount);
+                </div>
+                <div className="text-slate-700">
+                  project.reward_per_token_stored += reward_increase;
+                </div>
+                <div className="text-slate-700">
+                  project.total_energy_kwh += energy_kwh_delta;
+                </div>
+                <div className="pt-2 text-slate-400">
+                  {"// claim_revenue: cada participante, cuando quiera"}
+                </div>
+                <div>
+                  <span className="text-emerald-700 font-bold">let</span> accrued = balance * (reward_per_token_stored - paid) / PRECISION;
+                </div>
+                <div>
+                  <span className="text-emerald-700 font-bold">let</span> payout = accrued + pending;
+                </div>
+                <div className="text-slate-700">
+                  reward_paid.set((project_id, holder), reward_per_token_stored);
+                </div>
+                <div>
+                  <span className="text-amber-700 font-semibold">
+                    token.transfer(&amp;contract, &amp;holder, &amp;payout);
+                  </span>
+                </div>
+                <div className="pt-2 text-slate-400">
+                  {"// aritmética con checked_* (Overflow = error #13); PRECISION = 1e18"}
+                </div>
+              </div>
+
+              {/* Contract badge — real testnet ID */}
+              <div className="mt-4 p-4 rounded bg-emerald-50/80 border border-emerald-100 flex items-center justify-between text-slate-800 gap-3">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="material-symbols-outlined text-emerald-600 text-[18px] shrink-0">
+                    verified_user
+                  </span>
+                  <span className="font-medium text-slate-700 text-[11px] hidden sm:inline">
+                    Stellar Testnet Contract:
+                  </span>
+                  <span className="font-medium text-slate-700 text-[11px] sm:hidden">
+                    Contract:
+                  </span>
+                  <a
+                    href={EXPLORER_URL}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-[11px] text-emerald-700 font-bold truncate hover:underline"
+                    title={CONTRACT_ID}
+                  >
+                    {shortContract}
+                  </a>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    onClick={handleCopy}
+                    className="px-2 py-1 rounded border border-emerald-200 bg-white text-emerald-700 text-[11px] font-medium hover:bg-emerald-50 transition-colors flex items-center gap-1"
+                    title="Copiar Contract ID"
+                  >
+                    <span className="material-symbols-outlined text-[14px]">
+                      {copied ? "check" : "content_copy"}
+                    </span>
+                    {copied ? "Copiado" : "Copiar"}
+                  </button>
+                  <a
+                    href={EXPLORER_URL}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="p-1 rounded border border-emerald-200 bg-white text-emerald-700 hover:bg-emerald-50 transition-colors"
+                    title="Ver en stellar.expert"
+                  >
+                    <span className="material-symbols-outlined text-[16px]">open_in_new</span>
+                  </a>
+                </div>
+              </div>
+              <div className="mt-2 text-[10px] font-mono text-slate-500 break-all" title={CONTRACT_ID}>
+                {CONTRACT_ID}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}

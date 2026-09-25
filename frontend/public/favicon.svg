@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <defs>
+    <linearGradient id="g1" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#059669"/>
+      <stop offset="100%" stop-color="#10b981"/>
+    </linearGradient>
+    <linearGradient id="g2" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#ea580c"/>
+      <stop offset="100%" stop-color="#f59e0b"/>
+    </linearGradient>
+  </defs>
+  <!-- Sun circle -->
+  <circle cx="16" cy="16" r="15" fill="url(#g1)"/>
+  <!-- Sun rays -->
+  <g stroke="#fbbf24" stroke-width="2" stroke-linecap="round">
+    <line x1="16" y1="2" x2="16" y2="6"/>
+    <line x1="16" y1="26" x2="16" y2="30"/>
+    <line x1="2" y1="16" x2="6" y2="16"/>
+    <line x1="26" y1="16" x2="30" y2="16"/>
+    <line x1="5.9" y1="5.9" x2="8.7" y2="8.7"/>
+    <line x1="23.3" y1="23.3" x2="26.1" y2="26.1"/>
+    <line x1="5.9" y1="26.1" x2="8.7" y2="23.3"/>
+    <line x1="23.3" y1="8.7" x2="26.1" y2="5.9"/>
+  </g>
+  <!-- Solar panel grid -->
+  <rect x="9" y="10" width="14" height="12" rx="1.5" fill="white" opacity="0.95"/>
+  <line x1="9" y1="14" x2="23" y2="14" stroke="#059669" stroke-width="0.8"/>
+  <line x1="9" y1="18" x2="23" y2="18" stroke="#059669" stroke-width="0.8"/>
+  <line x1="14" y1="10" x2="14" y2="22" stroke="#059669" stroke-width="0.8"/>
+  <line x1="19" y1="10" x2="19" y2="22" stroke="#059669" stroke-width="0.8"/>
+  <!-- N letter -->
+  <text x="16" y="19.5" text-anchor="middle" font-family="Arial,sans-serif" font-weight="900" font-size="8" fill="#059669">N</text>
+</svg>
