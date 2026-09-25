@@ -75,7 +75,7 @@ NIKO SUN registra proyectos de energía solar en un contrato Soroban en Stellar:
 
 ## Contrato
 
-Funciones públicas (v2.1), agrupadas por rol:
+Funciones públicas (v2.2), agrupadas por rol:
 
 **Administrador**
 
@@ -134,34 +134,40 @@ Funciones públicas (v2.1), agrupadas por rol:
 
 ## Evidencia on-chain
 
-### Contrato v2.1 (versión actual)
+### Contrato v2.2 (versión actual)
 
-**Contract ID:** [`CAFJK3XSGBJVOPIDPKJ7CCGNCGHFZOXA75HDQ372KDJSEKXVVPQ4EVQK`](https://stellar.expert/explorer/testnet/contract/CAFJK3XSGBJVOPIDPKJ7CCGNCGHFZOXA75HDQ372KDJSEKXVVPQ4EVQK)
+**Contract ID:** [`CCV6LA77VHMBTDP2RBIG5J5HULSKNSDB5FN5QYBIK3T5VRNPQFARAPAH`](https://stellar.expert/explorer/testnet/contract/CCV6LA77VHMBTDP2RBIG5J5HULSKNSDB5FN5QYBIK3T5VRNPQFARAPAH)
 
-Ciclo completo ejecutado en testnet el 2026-09-24 con `scripts/demo-cycle.sh`:
+Ciclo completo ejecutado en testnet el 2026-09-25 con `scripts/demo-cycle.sh`:
 
 | Paso | Transacción |
 |---|---|
-| Despliegue con constructor (wasm `3f86af78…`, commit `982b7f1`) | [`182e635db3f9…`](https://stellar.expert/explorer/testnet/tx/182e635db3f9e2285c7edae4abbf183a2c7a7bb41585d55319d1c22d68be20e9) |
-| Emisor verificado (`set_issuer`) | [`c55cfc0754f0…`](https://stellar.expert/explorer/testnet/tx/c55cfc0754f0d65b8284e0188479f659464d2a43c63f5795a0a81b5cd181a531) |
-| Participante aprobado (`set_participant`) | [`d00c017bc645…`](https://stellar.expert/explorer/testnet/tx/d00c017bc6454cd20c2cdb8b0ed5327c381a826e2a44cab2af1c174cec65ef00) |
-| `create_project` | [`c5a18d0eaffb…`](https://stellar.expert/explorer/testnet/tx/c5a18d0eaffb1aafbde411fd501308e76817595b79915a671f1ba40072f7b0d2) |
-| `purchase_tokens` (30 participaciones, 300 XLM) | [`7e09bac64934…`](https://stellar.expert/explorer/testnet/tx/7e09bac64934f7f130d0a200c28c2e62edd1e79053f4fde6cd765f9d11236e9f) |
-| `update_energy` (+1250 kWh) | [`2a2e533a230f…`](https://stellar.expert/explorer/testnet/tx/2a2e533a230ff053924e041e254cf9dea6ca07debb230587922ff36ab510ffba) |
-| `deposit_revenue` (40 XLM) | [`1493a38d874d…`](https://stellar.expert/explorer/testnet/tx/1493a38d874d96be33bb75a14fe0f47dc2f6eb0147f38a72e672d9af6f9eb0b7) |
-| `claim_revenue` (30 XLM al participante 1) | [`f27deb604133…`](https://stellar.expert/explorer/testnet/tx/f27deb604133baf8584e1290007cffbe1d5920bcac6fa957c45d95dfd67363f1) |
-| `withdraw_sales` (200 XLM al emisor) | [`19de8fbeec5b…`](https://stellar.expert/explorer/testnet/tx/19de8fbeec5b0073632a1fd9ebbb309f8d6d8351f559972bef9fd1c0624013ba) |
-| `set_paused` (compra rechazada con `Paused #5` durante la pausa) | [`b0c1f2f68eda…`](https://stellar.expert/explorer/testnet/tx/b0c1f2f68eda442f9cc370e07c7e78f172aaaf87063057c634f52d797dc443b7) |
+| Despliegue con constructor (wasm `98a32524…`, commit `5a921f8`) | [`ba55f4d93ddc…`](https://stellar.expert/explorer/testnet/tx/ba55f4d93ddc5fc13dab571207069fd1193afafdda0c49daecc92e3bf6d58164) |
+| Emisor verificado (`set_issuer`) | [`3d6bf88fb72e…`](https://stellar.expert/explorer/testnet/tx/3d6bf88fb72ee130015f78712472311ee28fbcbba2edeebf26a106c7c3e69a8d) |
+| Participante aprobado (`set_participant`) | [`919f0b125099…`](https://stellar.expert/explorer/testnet/tx/919f0b125099280bd09ea31d1269e2e29dc326dafb4812acbc5eccc24495e84e) |
+| `create_project` | [`5c8115e99352…`](https://stellar.expert/explorer/testnet/tx/5c8115e99352548b948a7502aad0b985542a80852eec1bdf9a98695712b7c12e) |
+| `purchase_tokens` (30 participaciones, 300 XLM) | [`affaeb9ceb99…`](https://stellar.expert/explorer/testnet/tx/affaeb9ceb99375bf55f6bcd694b7c0670fc87517b0befe0ee2f9013549d919d) |
+| `update_energy` (+1250 kWh) | [`ada206fda7f1…`](https://stellar.expert/explorer/testnet/tx/ada206fda7f122227c0cf1aa222451e22ecd32f8e2afe85d6ee69c38587c1131) |
+| `deposit_revenue` (40 XLM) | [`7e137bb743e1…`](https://stellar.expert/explorer/testnet/tx/7e137bb743e11a717dcdce8d95b2ed1d84e9dac10bed9fa99fdc46ab474acb4e) |
+| `claim_revenue` (30 XLM al participante 1) | [`1177e8a1499b…`](https://stellar.expert/explorer/testnet/tx/1177e8a1499b38cc9a4672733a59daaec49d9c4be3c9e997b45212b1e3f015aa) |
+| `withdraw_sales` (200 XLM al emisor) | [`1ce7c4500429…`](https://stellar.expert/explorer/testnet/tx/1ce7c45004293c1eec8fff433fb49508c37fadf4c1fbb15ed218fc79877c746f) |
+| `set_paused` (compra rechazada con `Paused #5` durante la pausa) | [`e66872aedbc1…`](https://stellar.expert/explorer/testnet/tx/e66872aedbc1cc3bcf3e01dec38b6aeb6ea67e230b50b36509cc950f660a7a09) |
 
 El detalle completo está en [`docs/ciclo-onchain-testnet.md`](docs/ciclo-onchain-testnet.md):
 - todos los pasos;
 - los efectos en Horizon que muestran el movimiento real de XLM;
-- las correcciones de la revisión de seguridad verificadas on-chain (`#11` por saldo insuficiente, incluida la reserva mínima; `#15` por nombre inválido);
+- las correcciones de la revisión de seguridad verificadas on-chain: `#11` por saldo insuficiente (incluida la reserva mínima), `#15` por nombre inválido, y el TTL del nombre renovado junto con el proyecto;
 - los costos medidos por operación;
-- el TTL del contrato (vivo hasta ≈ 2026-10-25);
-- el historial de versiones. La revisión de seguridad está en [`docs/security-audit.md`](docs/security-audit.md).
+- el TTL del contrato (vivo hasta ≈ 2026-10-26);
+- el historial de versiones.
 
-La versión anterior, **v2** ([`CADAAIOMITOWW6MI5YF4UNE6T5GQWY7OF6SHRJNQS4ZGGQ4UDEQXCMNM`](https://stellar.expert/explorer/testnet/contract/CADAAIOMITOWW6MI5YF4UNE6T5GQWY7OF6SHRJNQS4ZGGQ4UDEQXCMNM)), completó el mismo ciclo. La v2.1 la reemplaza porque mueve el estado por cuenta a storage persistente por clave.
+La revisión de seguridad está en [`docs/security-audit.md`](docs/security-audit.md).
+
+Versiones anteriores que completaron el mismo ciclo:
+- **v2.1** ([`CAFJK3XS…`](https://stellar.expert/explorer/testnet/contract/CAFJK3XSGBJVOPIDPKJ7CCGNCGHFZOXA75HDQ372KDJSEKXVVPQ4EVQK)), con storage persistente por clave;
+- **v2** ([`CADAAIOM…`](https://stellar.expert/explorer/testnet/contract/CADAAIOMITOWW6MI5YF4UNE6T5GQWY7OF6SHRJNQS4ZGGQ4UDEQXCMNM)), con el estado en la instancia.
+
+La v2.2 agrega la doble firma en `transfer_ownership` y la renovación del TTL del nombre del proyecto.
 
 ### Historial v1 (primera versión del contrato, solo contable, sin movimiento de XLM; se conserva por trazabilidad)
 
@@ -230,6 +236,7 @@ Ventana del evento: abrió el 2026-09-19 09:00 (hora de Perú). El primer commit
   - integración de este código con su historial al repositorio de entrega;
   - contrato **v2**: controles de cumplimiento, eventos, TTL y errores tipados;
   - revisión de seguridad del contrato y **v2.1** con almacenamiento persistente por clave, que cierra los hallazgos alto y medios ([`docs/security-audit.md`](docs/security-audit.md));
+  - **v2.2** tras la revisión del equipo: `transfer_ownership` con doble firma y TTL del nombre del proyecto renovado. Se cierran los hallazgos bajos. En el frontend: detalle de proyecto por `?id=` para cualquier proyecto on-chain, estado de "proyecto no encontrado" y verificación de la cuenta firmante en Freighter;
   - despliegues en testnet y ciclo completo on-chain;
   - frontend integrado al contrato (unidades exactas, cumplimiento y eventos);
   - se ajustó todo el copy para no usar lenguaje de productos financieros y se quitaron los datos inventados;
@@ -303,7 +310,7 @@ Planes a futuro; no son promesas ni compromisos:
 - KYC real mediante SEP-12.
 - Conversión a moneda fiat a través de anchors (SEP-24 / SEP-6).
 - Oráculo de telemetría IoT firmada para la producción de energía.
-- Auditoría externa del contrato antes de cualquier despliegue en producción. También queda cerrar los hallazgos bajos pendientes de la revisión interna: renovar el TTL del nombre del proyecto, pedir la firma del receptor en `transfer_ownership` y el handover del admin en dos pasos.
+- Auditoría externa del contrato antes de cualquier despliegue en producción, y handover del admin en dos pasos.
 - Una participación regulada y transferible (activo clásico con `AUTH_REQUIRED`/`AUTH_REVOCABLE` más un SAC), condicionada a que un regulador lo permita.
 
 ## Licencia
