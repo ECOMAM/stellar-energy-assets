@@ -1,5 +1,5 @@
 /**
- * Soroban RPC event reader for the v2 contract.
+ * Soroban RPC event reader for the v2.1 contract.
  *
  * Wire format (contracts/niko_project/src/lib.rs, #[contractevent]): the
  * first topic is the event name as a Symbol, the remaining topics are the
@@ -13,11 +13,13 @@
  * older makes the request fail. It is also raised to the contract's deploy
  * ledger when known, because the RPC scans at most ~10k ledgers per request
  * and answers with an empty page plus a cursor: pages are followed until the
- * cursor reaches latestLedger, even when they come back empty.
+ * cursor reaches latestLedger, even when they come back empty. Identical
+ * scans share one result through lib/readCache.ts.
  */
 
 import { CONTRACT_DEPLOY_LEDGER, CONTRACT_ID, RPC_URL } from "./contract";
-import { toBigInt, type StroopsLike } from "./units";
+import { cachedRead, readKey } from "./readCache";
+import { toBigIntOr } from "./units";
 
 export type DecodedContractEvent = {
   id: string;
@@ -57,17 +59,29 @@ function isOutOfRange(err: unknown): boolean {
 /**
  * Fetch and decode this contract's events named `name`. `topicSegments` are
  * the matchers for the remaining topics ("*" or base64 ScVal XDR), one per
- * #[topic] field.
+ * #[topic] field. The result is shared by identical calls: treat it as
+ * read-only.
  */
-export async function fetchContractEvents(
+export function fetchContractEvents(
   name: string,
   topicSegments: string[],
   opts: { pageSize?: number; maxPages?: number } = {}
 ): Promise<DecodedContractEvent[]> {
-  const sdk = await import("@stellar/stellar-sdk");
-  const server = new sdk.rpc.Server(RPC_URL);
   const pageSize = opts.pageSize ?? 200;
   const maxPages = opts.maxPages ?? 20;
+  return cachedRead(readKey("events", name, topicSegments, pageSize, maxPages), () =>
+    scanContractEvents(name, topicSegments, pageSize, maxPages)
+  );
+}
+
+async function scanContractEvents(
+  name: string,
+  topicSegments: string[],
+  pageSize: number,
+  maxPages: number
+): Promise<DecodedContractEvent[]> {
+  const sdk = await import("@stellar/stellar-sdk");
+  const server = new sdk.rpc.Server(RPC_URL);
   const nameXdr = sdk.nativeToScVal(name, { type: "symbol" }).toXDR("base64");
   const filters = [{ type: "contract" as const, contractIds: [CONTRACT_ID], topics: [[nameXdr, ...topicSegments]] }];
 
@@ -131,23 +145,15 @@ export type DepositEvent = {
   ledgerClosedAt: string;
 };
 
-function big(v: unknown): bigint | null {
-  try {
-    return v === undefined || v === null ? null : toBigInt(v as StroopsLike);
-  } catch {
-    return null;
-  }
-}
-
 /** deposit: topics ["deposit", project_id], data {amount, energy_delta}. */
 export function parseDepositEvent(evt: Pick<DecodedContractEvent, "topics" | "data"> & Partial<DecodedContractEvent>): DepositEvent | null {
   const [name, pid] = evt.topics;
   if (evt.topics.length !== 2 || name !== "deposit") return null;
-  const projectId = big(pid);
+  const projectId = toBigIntOr(pid, null);
   const d = evt.data as Record<string, unknown> | null;
   if (projectId === null || !d || typeof d !== "object") return null;
-  const amount = big(d.amount);
-  const energyDelta = big(d.energy_delta);
+  const amount = toBigIntOr(d.amount, null);
+  const energyDelta = toBigIntOr(d.energy_delta, null);
   if (amount === null || energyDelta === null) return null;
   return {
     projectId,

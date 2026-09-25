@@ -168,7 +168,7 @@ export default function TransactionSuccess({
                       COMPROBANTE DE PARTICIPACIÓN (DEMO)
                     </h3>
                     <span className="text-[12px] text-slate-500">
-                      Stellar testnet · contrato Soroban v2
+                      Stellar testnet · contrato Soroban v2.1
                     </span>
                   </div>
                   <div className="text-right shrink-0">
@@ -300,10 +300,10 @@ export default function TransactionSuccess({
               <div className="bg-slate-50 p-6 rounded-xl shadow-sm border border-slate-200 flex flex-col">
                 <div className="flex items-center justify-between mb-4">
                   <span className="text-[11px] text-emerald-700 uppercase font-bold tracking-wider">
-                    Depósito en Billetera
+                    Registro en el contrato
                   </span>
                   <span className="px-2 py-0.5 rounded-full bg-emerald-600 text-white text-[11px] font-bold">
-                    100.0% Recibido
+                    Confirmada on-chain
                   </span>
                 </div>
                 <div className="flex items-baseline gap-2 mb-1">
@@ -377,18 +377,13 @@ export default function TransactionSuccess({
                 </div>
               </div>
 
-              {/* Micro support notice */}
-              <div className="bg-slate-100/40 p-4 rounded-xl flex items-center justify-between text-slate-500 border border-slate-200/60">
-                <div className="flex items-center gap-2">
-                  <span className="material-symbols-outlined text-base text-slate-400">
-                    verified_user
-                  </span>
-                  <span className="text-[12px]">
-                    Custodia sin custodia: Eres dueño total de tu clave.
-                  </span>
-                </div>
-                <span className="text-[12px] text-emerald-600 font-bold hover:underline cursor-pointer">
-                  Soporte 24/7
+              {/* Non-custodial notice */}
+              <div className="bg-slate-100/40 p-4 rounded-xl flex items-center gap-2 text-slate-500 border border-slate-200/60">
+                <span className="material-symbols-outlined text-base text-slate-400">
+                  verified_user
+                </span>
+                <span className="text-[12px]">
+                  Sin custodia: tus llaves quedan en Freighter.
                 </span>
               </div>
             </div>

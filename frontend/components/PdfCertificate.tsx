@@ -110,7 +110,7 @@ export default function PdfCertificate({ data }: { data: CertificateData }) {
     doc.setFont("helvetica", "italic");
     doc.setFontSize(8);
     doc.setTextColor(...slate500);
-    doc.text("Contrato Soroban v2 en Stellar testnet · sin valor legal ni financiero", w / 2, y, {
+    doc.text("Contrato Soroban v2.1 en Stellar testnet · sin valor legal ni financiero", w / 2, y, {
       align: "center",
     });
 

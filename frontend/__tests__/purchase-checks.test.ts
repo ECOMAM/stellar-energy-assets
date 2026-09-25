@@ -1,11 +1,14 @@
 import { describe, it, expect } from "vitest";
 import {
   FEE_MARGIN_STROOPS,
+  INVALID_COUNT_MESSAGE,
   checkPurchase,
+  parseParticipationCount,
   spendableFromHorizon,
   supplyAllows,
   type PurchaseCheckInput,
 } from "@/lib/purchaseChecks";
+import { formatXlm } from "@/lib/units";
 import { PARTICIPANT_NOT_APPROVED_MESSAGE } from "@/lib/contractErrors";
 import { xlmToStroops } from "@/lib/units";
 
@@ -92,5 +95,35 @@ describe("spendableFromHorizon", () => {
   it("never goes negative and handles a missing native balance", () => {
     expect(spendableFromHorizon({ balances: [{ asset_type: "native", balance: "0.5000000" }] })).toBe(0n);
     expect(spendableFromHorizon({ balances: [] })).toBe(0n);
+  });
+});
+
+describe("participation count input (validated before any BigInt)", () => {
+  it("accepts 1 to 18 digits", () => {
+    expect(parseParticipationCount("1")).toBe(1n);
+    expect(parseParticipationCount(" 25 ")).toBe(25n);
+    expect(parseParticipationCount("007")).toBe(7n);
+    expect(parseParticipationCount("9".repeat(18))).toBe(10n ** 18n - 1n);
+  });
+
+  it("rejects everything else without throwing", () => {
+    const bad = ["", " ", "abc", "1.5", "-3", "+3", "1e3", "1,000", "0x10", "Infinity", "NaN", "9".repeat(19), "9".repeat(400)];
+    for (const input of bad) {
+      expect(() => parseParticipationCount(input)).not.toThrow();
+      expect(parseParticipationCount(input)).toBeNull();
+    }
+    expect(INVALID_COUNT_MESSAGE).toMatch(/número entero/);
+  });
+
+  it("the largest accepted count still renders and is checked, never crashes", () => {
+    const amount = parseParticipationCount("9".repeat(18))!;
+    expect(formatXlm(PROJECT_1.price * amount)).toBe("9,999,999,999,999,999,990");
+    expect(checkPurchase(base({ amount })).blockers.map((b) => b.code)).toEqual(["supply", "balance"]);
+  });
+
+  it("0 parses as digits, then the purchase check blocks it", () => {
+    const amount = parseParticipationCount("0")!;
+    expect(amount).toBe(0n);
+    expect(checkPurchase(base({ amount })).blockers.map((b) => b.code)).toContain("invalid_amount");
   });
 });

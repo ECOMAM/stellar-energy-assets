@@ -1,10 +1,10 @@
 /**
- * On-chain project reads (v2): next_project_id, get_project(u64),
+ * On-chain project reads (v2.1): next_project_id, get_project(u64),
  * get_project_name(u64). Amounts stay bigint stroops; convert with lib/units.
  */
 
 import { readContractNative } from "./soroban";
-import { toBigInt, type StroopsLike } from "./units";
+import { toBigIntOr } from "./units";
 
 export type OnChainProject = {
   id: number;
@@ -22,10 +22,7 @@ export type OnChainProject = {
   createdAt: bigint;
 };
 
-function big(v: unknown): bigint {
-  if (v === undefined || v === null) return BigInt(0);
-  return toBigInt(v as StroopsLike);
-}
+const ZERO = BigInt(0);
 
 /** Map the scValToNative() form of the `Project` struct to OnChainProject. */
 export function parseProject(id: number, raw: unknown, name = ""): OnChainProject {
@@ -34,14 +31,14 @@ export function parseProject(id: number, raw: unknown, name = ""): OnChainProjec
     id,
     name,
     creator: typeof p.creator === "string" ? p.creator : String(p.creator ?? ""),
-    totalSupply: big(p.total_supply),
-    minted: big(p.minted),
-    minPurchase: big(p.min_purchase),
-    price: big(p.price),
+    totalSupply: toBigIntOr(p.total_supply, ZERO),
+    minted: toBigIntOr(p.minted, ZERO),
+    minPurchase: toBigIntOr(p.min_purchase, ZERO),
+    price: toBigIntOr(p.price, ZERO),
     active: p.active !== false,
-    totalEnergyKwh: big(p.total_energy_kwh),
-    totalRevenue: big(p.total_revenue),
-    createdAt: big(p.created_at),
+    totalEnergyKwh: toBigIntOr(p.total_energy_kwh, ZERO),
+    totalRevenue: toBigIntOr(p.total_revenue, ZERO),
+    createdAt: toBigIntOr(p.created_at, ZERO),
   };
 }
 
@@ -53,7 +50,7 @@ export function soldPercent(p: Pick<OnChainProject, "minted" | "totalSupply">): 
 
 export async function fetchNextProjectId(): Promise<number> {
   const raw = await readContractNative<unknown>("next_project_id");
-  return Number(big(raw));
+  return Number(toBigIntOr(raw, ZERO));
 }
 
 export async function fetchOnChainProject(id: number): Promise<OnChainProject> {

@@ -2,13 +2,13 @@
 
 import { useState, useCallback, useEffect, useMemo } from "react";
 import { cn } from "@/lib/utils";
-import { useWallet } from "@/lib/WalletContext";
+import { useWallet, type SignAndSend } from "@/lib/WalletContext";
 import { CONTRACT_ID, TX_EXPLORER } from "@/lib/contract";
-import { describeTxError, PARTICIPANT_NOT_APPROVED_MESSAGE } from "@/lib/contractErrors";
+import { describeTxError, PARTICIPANT_NOT_APPROVED_MESSAGE, txHashOf } from "@/lib/contractErrors";
 import { getProjectMeta, META_PROJECT_IDS } from "@/lib/projectMeta";
 import { soldPercent, type OnChainProject } from "@/lib/projects";
 import { readContractNative } from "@/lib/soroban";
-import { formatXlm, toBigInt, xlmToStroops, type StroopsLike } from "@/lib/units";
+import { formatXlm, toBigIntOr, xlmToStroops } from "@/lib/units";
 import PdfCertificate from "@/components/PdfCertificate";
 import ProtocolVerification from "@/components/ProtocolVerification";
 import { useHolderMetrics } from "@/hooks/useHolderMetrics";
@@ -92,13 +92,7 @@ function useDisplayProjects() {
 
 type Position = { balance: bigint; claimable: bigint; claimed: bigint };
 
-function big(v: unknown): bigint {
-  try {
-    return v === undefined || v === null ? BigInt(0) : toBigInt(v as StroopsLike);
-  } catch {
-    return BigInt(0);
-  }
-}
+const ZERO = BigInt(0);
 
 /** get_portfolio(address, ids) -> Map<projectId, Position>. null while unknown. */
 function usePortfolio(address: string | null | undefined, ids: number[]) {
@@ -117,10 +111,10 @@ function usePortfolio(address: string | null | undefined, ids: number[]) {
       const raw = await readContractNative<Array<Record<string, unknown>>>("get_portfolio", [address, list]);
       const map = new Map<number, Position>();
       for (const p of Array.isArray(raw) ? raw : []) {
-        map.set(Number(big(p.project_id)), {
-          balance: big(p.token_balance),
-          claimable: big(p.claimable_amount),
-          claimed: big(p.total_claimed),
+        map.set(Number(toBigIntOr(p.project_id, ZERO)), {
+          balance: toBigIntOr(p.token_balance, ZERO),
+          claimable: toBigIntOr(p.claimable_amount, ZERO),
+          claimed: toBigIntOr(p.total_claimed, ZERO),
         });
       }
       setPositions(map);
@@ -367,7 +361,7 @@ function Sidebar({
           </div>
           {!connected && (
             <button
-              onClick={connect}
+              onClick={() => connect().catch((e) => console.warn("Freighter connect failed", e))}
               className="h-7 w-full border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 rounded-lg text-xs font-medium transition-colors"
             >
               Conectar wallet
@@ -505,30 +499,42 @@ function ParticipantStatus({ connected, compliance }: { connected: boolean; comp
   );
 }
 
+type ClaimOutcome = {
+  /** claims that reached SUCCESS on-chain */
+  hashes: string[];
+  /** XLM paid by those claims (claim_revenue's return value); null if an amount is unknown */
+  claimed: bigint | null;
+  /** first failure; `hash` is set when that transaction was sent */
+  error: { text: string; hash?: string } | null;
+};
+
 /** Sequentially claim every project with claimable > 0 (one Freighter signature each). */
-async function claimProjects(
-  signAndSend: (contractId: string, method: string, args: unknown[]) => Promise<{ txHash: string; result?: unknown }>,
-  address: string,
-  ids: number[]
-): Promise<{ hashes: string[]; claimed: bigint; error: string | null }> {
+async function claimProjects(signAndSend: SignAndSend, address: string, ids: number[]): Promise<ClaimOutcome> {
   const sdk = await import("@stellar/stellar-sdk");
   const hashes: string[] = [];
-  let claimed = BigInt(0);
+  let claimed: bigint | null = ZERO;
   for (const id of ids) {
     try {
-      // contract: claim_revenue(address: Address, project_id: u64) -> u128
-      const { txHash, result } = await signAndSend(CONTRACT_ID, "claim_revenue", [address, id]);
+      // contract: claim_revenue(address: Address, project_id: u64) -> u128.
+      // signAndSend resolves only once the claim reached SUCCESS.
+      const { txHash, returnValue } = await signAndSend(CONTRACT_ID, "claim_revenue", [address, id]);
       hashes.push(txHash);
+      let amount: bigint | null = null;
       try {
-        if (result) claimed += big(sdk.scValToNative(result as never));
+        amount = returnValue ? toBigIntOr(sdk.scValToNative(returnValue), null) : null;
       } catch {
         // amount unknown; the tx link is still shown
       }
+      claimed = claimed !== null && amount !== null ? claimed + amount : null;
     } catch (e) {
-      return { hashes, claimed, error: describeTxError(e, { method: "claim_revenue" }) };
+      return { hashes, claimed, error: { text: describeTxError(e), hash: txHashOf(e) } };
     }
   }
   return { hashes, claimed, error: null };
+}
+
+function claimedText(claimed: bigint | null): string {
+  return claimed !== null ? `${formatXlm(claimed)} XLM` : "monto no informado (ver la transacción)";
 }
 
 /* ── View Sections ── */
@@ -540,11 +546,7 @@ function DashboardView({
   address,
 }: {
   setView: (v: View) => void;
-  signAndSend: (
-    contractId: string,
-    method: string,
-    args: unknown[]
-  ) => Promise<{ txHash: string; result?: unknown }>;
+  signAndSend: SignAndSend;
   connected: boolean;
   address?: string | null;
 }) {
@@ -580,8 +582,22 @@ function DashboardView({
     const r = await claimProjects(signAndSend, address, claimableIds);
     setClaimMsg(
       r.error
-        ? { tone: "error", text: r.error, hashes: r.hashes }
-        : { tone: "success", text: `Reclamaste ${formatXlm(r.claimed)} XLM.`, hashes: r.hashes }
+        ? {
+            tone: "error",
+            text:
+              r.hashes.length > 0
+                ? `${r.error.text} Reclamos confirmados antes del error: ${claimedText(r.claimed)}.`
+                : r.error.text,
+            hashes: r.error.hash ? [...r.hashes, r.error.hash] : r.hashes,
+          }
+        : {
+            tone: "success",
+            text:
+              r.claimed !== null
+                ? `Reclamaste ${formatXlm(r.claimed)} XLM.`
+                : "Reclamo confirmado on-chain; el monto no se pudo leer, revisa la transacción.",
+            hashes: r.hashes,
+          }
     );
     await reloadPortfolio();
     setClaiming(false);
@@ -621,24 +637,21 @@ function DashboardView({
         <StatCard
           icon="payments"
           label="Mi participación (XLM aportados)"
-          value={isReal ? `${formatXlm(contributed)} XLM` : "450 XLM"}
-          demo={!isReal}
+          value={isReal ? `${formatXlm(contributed)} XLM` : "—"}
         />
         <StatCard
           icon="bolt"
           label="Ingresos pendientes"
-          value={isPortfolioLoading ? "…" : isReal ? `${formatXlm(claimable)} XLM` : "23.4 XLM"}
+          value={isPortfolioLoading ? "…" : isReal ? `${formatXlm(claimable)} XLM` : "—"}
           action={claiming ? "Reclamando…" : "Reclamar todo"}
           onAction={handleClaimAll}
           actionDisabled={!isReal || claiming || claimableIds.length === 0}
-          demo={!isReal}
         />
         <StatCard
           icon="eco"
           label="Participaciones en posesión"
-          value={isReal ? tokens.toString() : "45"}
-          change={isReal ? `En ${heldIn} proyecto${heldIn === 1 ? "" : "s"}` : "En 3 proyectos"}
-          demo={!isReal}
+          value={isReal ? tokens.toString() : "—"}
+          change={isReal ? `En ${heldIn} proyecto${heldIn === 1 ? "" : "s"}` : undefined}
         />
       </div>
       {claimMsg && (
@@ -807,17 +820,13 @@ function ClaimView({
   connected,
   address,
 }: {
-  signAndSend: (
-    contractId: string,
-    method: string,
-    args: unknown[]
-  ) => Promise<{ txHash: string; result?: unknown }>;
+  signAndSend: SignAndSend;
   connected: boolean;
   address?: string | null;
 }) {
   const [claiming, setClaiming] = useState(false);
-  const [last, setLast] = useState<{ hashes: string[]; claimed: bigint; projectName: string } | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [last, setLast] = useState<{ hashes: string[]; claimed: bigint | null; projectName: string } | null>(null);
+  const [error, setError] = useState<ClaimOutcome["error"]>(null);
   const { projects, onChain, loading } = useDisplayProjects();
   const ids = useMemo(() => (onChain ?? []).map((p) => p.id), [onChain]);
   const { positions, reload } = usePortfolio(connected ? address : null, ids);
@@ -834,9 +843,11 @@ function ClaimView({
     if (!connected || !address || projectIds.length === 0) return;
     setClaiming(true);
     setError(null);
+    setLast(null);
     const r = await claimProjects(signAndSend, address, projectIds);
+    // Receipt and PDF only for claims that reached SUCCESS.
     if (r.hashes.length > 0) setLast({ hashes: r.hashes, claimed: r.claimed, projectName: label });
-    if (r.error) setError(r.error);
+    setError(r.error);
     await reload();
     setClaiming(false);
   };
@@ -864,11 +875,16 @@ function ClaimView({
         )}
         <div className="text-sm text-slate-500">Total disponible</div>
         <div className="mt-2 font-mono text-4xl font-bold text-slate-900">
-          {isReal ? formatXlm(total) : "23.4"}{" "}
-          <span className="text-xl text-orange-600">XLM</span>
+          {isReal ? (
+            <>
+              {formatXlm(total)} <span className="text-xl text-orange-600">XLM</span>
+            </>
+          ) : (
+            "—"
+          )}
         </div>
         {!connected && (
-          <p className="mt-2 text-xs text-amber-700">Conecta tu wallet para ver tus ingresos reales. El valor mostrado es simulado.</p>
+          <p className="mt-2 text-xs text-amber-700">Conecta tu wallet para ver tus ingresos por reclamar.</p>
         )}
         <button
           onClick={() => run(claimableIds, "Todos los proyectos")}
@@ -888,7 +904,11 @@ function ClaimView({
         </button>
       </div>
 
-      {error && <Notice tone="error">{error}</Notice>}
+      {error && (
+        <Notice tone="error">
+          {error.text} {error.hash && <TxLink hash={error.hash} />}
+        </Notice>
+      )}
 
       {/* Breakdown */}
       <div className="bg-white border border-slate-200 rounded-xl shadow-md divide-y divide-slate-100">
@@ -937,7 +957,7 @@ function ClaimView({
             </span>
             <div>
               <div className="font-semibold text-emerald-800">
-                Transacción exitosa: {formatXlm(last.claimed)} XLM reclamados
+                Transacción exitosa: {last.claimed !== null ? `${formatXlm(last.claimed)} XLM reclamados` : "reclamo confirmado on-chain"}
               </div>
               <div className="text-xs text-emerald-600 flex flex-wrap gap-2">
                 {last.hashes.map((h) => (
@@ -952,7 +972,8 @@ function ClaimView({
               location: "Stellar testnet (demo)",
               capacity: "—",
               tokenAmount: "—",
-              pricePaid: `${formatXlm(last.claimed, { maxDecimals: 7 })} XLM reclamados`,
+              pricePaid:
+                last.claimed !== null ? `${formatXlm(last.claimed, { maxDecimals: 7 })} XLM reclamados` : "Ver la transacción",
               walletAddress: address ?? "—",
               txHash: last.hashes[last.hashes.length - 1],
             }}
@@ -975,7 +996,7 @@ function MetricsView() {
           Métricas
         </h1>
         <p className="mb-7 text-sm text-slate-500">
-          Totales leídos del contrato v2. La energía (kWh) la reporta el emisor y queda anclada on-chain; un oráculo IoT firmado está en el roadmap.
+          Totales leídos del contrato v2.1. La energía (kWh) la reporta el emisor y queda anclada on-chain; un oráculo IoT firmado está en el roadmap.
         </p>
       </div>
       <div className="grid gap-4 md:grid-cols-3">
@@ -1055,7 +1076,7 @@ function AdminProjectRow({
   const loadSales = useCallback(async () => {
     if (project.isDemo) return;
     try {
-      setSales(big(await readContractNative("get_sales_balance", [project.id])));
+      setSales(toBigIntOr(await readContractNative("get_sales_balance", [project.id]), ZERO));
     } catch {
       setSales(null);
     }
@@ -1087,7 +1108,7 @@ function AdminProjectRow({
       setEnergyKwh("");
       await onDone();
     } catch (e) {
-      setMsg({ tone: "error", text: describeTxError(e, { method: "deposit_revenue" }) });
+      setMsg({ tone: "error", text: describeTxError(e), hash: txHashOf(e) });
     } finally {
       setBusy(null);
     }
@@ -1114,7 +1135,7 @@ function AdminProjectRow({
       await loadSales();
       await onDone();
     } catch (e) {
-      setMsg({ tone: "error", text: describeTxError(e, { method: "withdraw_sales" }) });
+      setMsg({ tone: "error", text: describeTxError(e), hash: txHashOf(e) });
     } finally {
       setBusy(null);
     }
@@ -1234,7 +1255,7 @@ function AdminView() {
       setForm({ name: "", supply: "", price: "", minPurchase: "" });
       await reload();
     } catch (e) {
-      setCreateMsg({ tone: "error", text: describeTxError(e, { method: "create_project" }) });
+      setCreateMsg({ tone: "error", text: describeTxError(e), hash: txHashOf(e) });
     } finally {
       setCreating(false);
     }
@@ -1402,7 +1423,7 @@ function ProjectsView({ notify }: { notify: (m: string) => void }) {
         Mis proyectos
       </h1>
       <p className="mb-7 text-sm text-slate-500">
-        Proyectos demo registrados en el contrato v2 de testnet.
+        Proyectos demo registrados en el contrato v2.1 de testnet.
       </p>
       <div className="grid gap-4 lg:grid-cols-3">
         {projects.map((p) => (
@@ -1471,7 +1492,7 @@ export default function Page() {
                 onClick={() =>
                   connected
                     ? notify(`Wallet conectada: ${address?.slice(0, 4)}...${address?.slice(-4)}`)
-                    : connect()
+                    : connect().catch((e) => console.warn("Freighter connect failed", e))
                 }
                 className="h-9 bg-emerald-600 px-3 text-xs font-semibold text-white hover:bg-emerald-700 rounded-lg transition-colors flex items-center gap-2"
               >

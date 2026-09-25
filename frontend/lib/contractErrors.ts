@@ -1,15 +1,12 @@
 /**
  * Contract error codes (contracts/niko_project/src/lib.rs, `enum Error`) mapped
- * to Spanish messages, plus the parser for "Error(Contract, #N)" strings that
- * simulations and failed transactions surface.
+ * to Spanish messages, the parser for "Error(Contract, #N)" strings that
+ * simulations and failed transactions surface, and TxError, the failure type
+ * of signed contract calls (lib/transactions.ts).
  *
- * CAUTION: the native XLM SAC also fails with Error(Contract, #N). Its
- * BalanceError is #10, the same number as InsufficientSupply, and the
- * simulation error text only carries the calling contract's diagnostic events
- * (checked live on testnet), so a #10 from purchase_tokens can only be
- * resolved by re-checking the remaining supply (`supplyAvailable`, see
- * `describeContractError`). deposit_revenue never emits #10 itself, so there
- * it is always the SAC balance error.
+ * Since v2.1 a payer who cannot cover a payment always gets #11
+ * (InsufficientBalance): the contract maps the XLM SAC's BalanceError (#10)
+ * to it, so #10 only ever means InsufficientSupply.
  */
 
 export const PARTICIPANT_NOT_APPROVED_MESSAGE =
@@ -63,6 +60,36 @@ export const CONTRACT_ERRORS: Readonly<Record<number, ContractErrorInfo>> = {
   15: { name: "InvalidName", message: "El nombre del proyecto no puede estar vacío ni superar los 64 bytes." },
 };
 
+export type TxErrorKind =
+  | "rejected"
+  | "wrong_network"
+  | "wallet_timeout"
+  | "try_again_later"
+  | "send_error"
+  | "failed"
+  | "unknown_status";
+
+/**
+ * Failure of a signed contract call. The message is ready to show (Spanish;
+ * the "rejected" one is matched by the rejection branch of describeTxError)
+ * and `txHash` is set once the transaction was signed and handed to the RPC.
+ */
+export class TxError extends Error {
+  constructor(
+    readonly kind: TxErrorKind,
+    message: string,
+    readonly txHash?: string
+  ) {
+    super(message);
+    this.name = "TxError";
+  }
+}
+
+/** Hash of the transaction behind a failure, when it was sent. */
+export function txHashOf(err: unknown): string | undefined {
+  return err instanceof TxError ? err.txHash : undefined;
+}
+
 /** Extract N from "Error(Contract, #N)" in an error, message or object. */
 export function parseContractErrorCode(err: unknown): number | null {
   const text = errorText(err);
@@ -81,26 +108,8 @@ export function errorText(err: unknown): string {
   }
 }
 
-export type ErrorContext = {
-  /** Contract method that failed (enables the #10 disambiguation). */
-  method?: string;
-  /**
-   * purchase_tokens only: result of re-checking minted + amount <= total_supply.
-   * true => the #10 came from the XLM SAC (balance); false => sold out.
-   */
-  supplyAvailable?: boolean;
-};
-
-/** Spanish message for a contract error code, resolving the #10 collision. */
-export function describeContractError(code: number, ctx: ErrorContext = {}): string {
-  if (code === 10) {
-    if (ctx.method === "deposit_revenue") return XLM_BALANCE_TOO_LOW_MESSAGE;
-    if (ctx.method === "purchase_tokens") {
-      if (ctx.supplyAvailable === true) return XLM_BALANCE_TOO_LOW_MESSAGE;
-      if (ctx.supplyAvailable === false) return CONTRACT_ERRORS[10].message;
-      return "Error #10: no queda supply suficiente o tu saldo de XLM no alcanza (el mismo código lo usa el token XLM). Revisa ambos.";
-    }
-  }
+/** Spanish message for a contract error code. */
+export function describeContractError(code: number): string {
   const info = CONTRACT_ERRORS[code];
   return info
     ? `${info.message} (código #${code} ${info.name})`
@@ -111,24 +120,27 @@ export function describeContractError(code: number, ctx: ErrorContext = {}): str
  * Spanish message for any failure of a simulation or transaction: contract
  * codes first, then wallet and network cases, then the raw message.
  */
-export function describeTxError(err: unknown, ctx: ErrorContext = {}): string {
+export function describeTxError(err: unknown): string {
   const text = errorText(err);
   const code = parseContractErrorCode(text);
-  if (code !== null) return describeContractError(code, ctx);
+  if (code !== null) return describeContractError(code);
   if (/reject|cancel|declin|denied|Request closed/i.test(text)) {
     return "Cancelaste la firma en Freighter. No se envió ninguna transacción.";
   }
+  if (/underfunded|insufficient balance|txInsufficientBalance|tx_insufficient_balance|NOT_ENOUGH_BALANCE/i.test(text)) {
+    return XLM_BALANCE_TOO_LOW_MESSAGE;
+  }
+  if (/Error\(Auth/i.test(text)) {
+    return "La firma no autoriza esta operación: firma con la misma cuenta que aparece como remitente.";
+  }
+  // Wallet timeout, wrong network, TRY_AGAIN_LATER, ERROR, FAILED, unknown status:
+  // the message already explains it and carries the hash.
+  if (err instanceof TxError) return err.message;
   if (/not installed|is not defined|window\.freighter/i.test(text)) {
     return "No se detectó Freighter. Instala la extensión desde freighter.app y recarga la página.";
   }
   if (/Wallet not connected/i.test(text)) {
     return "Conecta tu wallet Freighter para continuar.";
-  }
-  if (/underfunded|insufficient balance|tx_insufficient_balance|NOT_ENOUGH_BALANCE/i.test(text)) {
-    return XLM_BALANCE_TOO_LOW_MESSAGE;
-  }
-  if (/Error\(Auth/i.test(text)) {
-    return "La firma no autoriza esta operación: firma con la misma cuenta que aparece como remitente.";
   }
   if (/Failed to fetch|NetworkError|ECONNRESET|timeout|503|502/i.test(text)) {
     return "No se pudo contactar la RPC de Stellar testnet. Revisa tu conexión e inténtalo de nuevo.";

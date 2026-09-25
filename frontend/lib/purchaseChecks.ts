@@ -4,7 +4,7 @@
  *   (a) is_participant(buyer)          -> NotParticipant (#4)
  *   (b) is_paused()                    -> Paused (#5)
  *   (c) minted + amount <= total_supply -> InsufficientSupply (#10)
- *   (d) spendable XLM >= price * amount + fee margin -> SAC BalanceError (#10)
+ *   (d) spendable XLM >= price * amount + fee margin -> InsufficientBalance (#11)
  * plus project active (#7) and min_purchase (#9).
  */
 
@@ -56,6 +56,18 @@ export type PurchaseCheckResult = {
   requiredStroops: bigint | null;
   remainingSupply: bigint | null;
 };
+
+/** Digits only, at most 18: always a safe BigInt, far below the u128 limit. */
+export const PARTICIPATION_COUNT_PATTERN = /^\d{1,18}$/;
+
+export const INVALID_COUNT_MESSAGE =
+  "Ingresa la cantidad de participaciones como un número entero (solo dígitos, hasta 18).";
+
+/** The typed participation count, or null when it is not 1-18 digits (checked before BigInt). */
+export function parseParticipationCount(input: string): bigint | null {
+  const s = input.trim();
+  return PARTICIPATION_COUNT_PATTERN.test(s) ? BigInt(s) : null;
+}
 
 export function remainingSupply(p: Pick<PurchaseProjectState, "totalSupply" | "minted">): bigint {
   const r = p.totalSupply - p.minted;

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import { TX_EXPLORER } from "@/lib/contract";
 
 /* ──────────────────── Types ──────────────────── */
 
@@ -21,6 +22,8 @@ interface SigningModalProps {
     | "wallet_missing";
   /** Error message when phase is error */
   errorMessage?: string;
+  /** Hash of a sent but failed or unconfirmed transaction, linked in the error box */
+  txHash?: string;
   /* ── Purchase data ── */
   projectName: string;
   projectFlag: string;
@@ -74,7 +77,7 @@ const PHASE_CONFIG = {
   submitting: {
     icon: "sync",
     label: "Enviando a Stellar...",
-    sublabel: "Confirmación en < 5 segundos",
+    sublabel: "Esperando la confirmación de la red",
     btnClass: "bg-emerald-600 opacity-70 cursor-not-allowed text-white",
     showSpinner: true,
   },
@@ -123,6 +126,7 @@ export default function TransactionSigningModal({
   onConfirm,
   phase,
   errorMessage,
+  txHash,
   projectName,
   projectFlag,
   assetId,
@@ -302,7 +306,7 @@ export default function TransactionSigningModal({
                     {shortContract(contractId)}
                   </span>
                   <span className="px-1.5 py-0.2 rounded bg-emerald-100 text-emerald-800 text-[10px] font-mono">
-                    Verificado
+                    v2.1 · testnet
                   </span>
                 </div>
               </div>
@@ -316,10 +320,10 @@ export default function TransactionSigningModal({
                 </span>
                 <div className="text-right">
                   <span className="font-mono font-bold text-amber-800">
-                    &lt; 0.1 XLM
+                    Centavos de XLM
                   </span>
                   <span className="text-[11px] text-slate-500 ml-1">
-                    (simulada antes de firmar)
+                    (Freighter muestra el monto exacto)
                   </span>
                 </div>
               </div>
@@ -332,7 +336,7 @@ export default function TransactionSigningModal({
                   Tiempo de Confirmación
                 </span>
                 <span className="font-mono text-slate-900">
-                  &lt; 5 seg (Stellar SCP)
+                  Unos segundos (cierre de ledger)
                 </span>
               </div>
               {/* Legal safeguard */}
@@ -383,6 +387,17 @@ export default function TransactionSigningModal({
                 <p className="text-[13px] text-red-700 leading-relaxed mt-0.5 font-mono">
                   {errorMessage}
                 </p>
+                {txHash && (
+                  <a
+                    href={TX_EXPLORER(txHash)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="mt-1 inline-flex items-center gap-1 text-[12px] font-semibold text-red-800 underline"
+                  >
+                    Ver la transacción en StellarExpert
+                    <span className="material-symbols-outlined text-[14px]">open_in_new</span>
+                  </a>
+                )}
               </div>
             </div>
           )}
