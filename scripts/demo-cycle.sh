@@ -59,7 +59,7 @@ tx_status() {
 # Envia la transaccion, registra el hash en el log y devuelve el valor de retorno.
 invoke() {
     local src="$1" label="$2"; shift 2
-    local err out hash attempt st i landed
+    local err out hash attempt st i nf
     err="$(mktemp)"
     for attempt in 1 2 3 4; do
         if out="$(stellar contract invoke --id "$CONTRACT_ID" --source-account "$src" \
@@ -68,20 +68,36 @@ invoke() {
         fi
         if [ "$attempt" -lt 4 ] && grep -q -i -E "$TRANSIENT" "$err"; then
             hash="$(grep -oE '[0-9a-f]{64}' "$err" | head -1 || true)"
-            landed=""
             if [ -n "$hash" ]; then
-                # La tx llego a firmarse: esperar a saber si entro al ledger
-                for i in 1 2 3 4 5 6 7 8; do
+                # La tx llego a firmarse. Solo se reenvia si la RPC responde NOT_FOUND de
+                # forma sostenida (~60 s). Si el estado es desconocido (la RPC no responde),
+                # se detiene, porque reenviar podria duplicar la operacion.
+                st=""; nf=0
+                for i in 1 2 3 4 5 6 7 8 9 10 11 12; do
                     st="$(tx_status "$hash" || true)"
-                    if [ "$st" = "SUCCESS" ]; then landed="yes"; break; fi
-                    if [ "$st" = "FAILED" ]; then break; fi
+                    case "$st" in
+                        SUCCESS|FAILED) break ;;
+                        NOT_FOUND) nf=$((nf + 1)) ;;
+                    esac
                     sleep 5
                 done
-            fi
-            if [ "$landed" = "yes" ]; then
-                echo "✔ $label: la tx ${hash:0:12}… sí entró al ledger pese al error de red" >&2
-                out=""
-                break
+                if [ "$st" = "SUCCESS" ]; then
+                    echo "✔ $label: la tx ${hash:0:12}… sí entró al ledger pese al error de red" >&2
+                    out=""
+                    break
+                fi
+                if [ "$st" = "FAILED" ]; then
+                    echo "❌ $label: la tx ${hash:0:12}… entró al ledger pero falló" >&2
+                    cat "$err" >&2
+                    rm -f "$err"
+                    exit 1
+                fi
+                if [ "$nf" -lt 10 ]; then
+                    echo "❌ $label: no se pudo confirmar el estado de la tx ${hash:0:12}… (la RPC no responde)." >&2
+                    echo "   Revisa $EXPLORER/tx/$hash y reanuda con RESUME_PROJECT_ID / RESUME_STEP." >&2
+                    rm -f "$err"
+                    exit 1
+                fi
             fi
             echo "↻ $label: error de red con la RPC (la tx no entró), reintento $attempt/3..." >&2
             sleep $((attempt * 5))
@@ -187,19 +203,20 @@ invoke "$ISSUER" "Emisor retira 200 XLM de ventas" withdraw_sales --caller "$ISS
 
 # 8. Pausa global: bloquea entradas de XLM; se verifica con una simulacion que falla con Paused (#5)
 invoke "$ADMIN" "Pausa global activada" set_paused --admin "$ADMIN_ADDR" --paused true > /dev/null
+PAUSE_ERR="$(mktemp)"
 if stellar contract invoke --id "$CONTRACT_ID" --source-account "$P1" --network "$NETWORK" --send=no \
-        -- purchase_tokens --buyer "$P1_ADDR" --project_id "$PID" --amount 1 > /dev/null 2>/tmp/niko_pause.err; then
+        -- purchase_tokens --buyer "$P1_ADDR" --project_id "$PID" --amount 1 > /dev/null 2>"$PAUSE_ERR"; then
     echo "❌ La compra NO fue rechazada durante la pausa" >&2
     exit 1
 fi
-if grep -q -E 'Error\(Contract, #5\)' /tmp/niko_pause.err; then
+if grep -q -E 'Error\(Contract, #5\)' "$PAUSE_ERR"; then
     echo "| Compra durante la pausa | rechazada con \`Paused (#5)\` (simulación) | — |" >> "$LOG"
     echo "✅ Compra rechazada durante la pausa (Paused #5)" >&2
 else
     echo "⚠️  La compra falló, pero no con Paused (#5):" >&2
-    cat /tmp/niko_pause.err >&2
+    cat "$PAUSE_ERR" >&2
 fi
-rm -f /tmp/niko_pause.err
+rm -f "$PAUSE_ERR"
 invoke "$ADMIN" "Pausa global desactivada" set_paused --admin "$ADMIN_ADDR" --paused false > /dev/null
 
 echo ""

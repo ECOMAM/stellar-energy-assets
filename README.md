@@ -75,7 +75,7 @@ NIKO SUN registra proyectos de energía solar en un contrato Soroban en Stellar:
 
 ## Contrato
 
-Funciones públicas (v2), agrupadas por rol:
+Funciones públicas (v2.1), agrupadas por rol:
 
 **Administrador**
 
@@ -223,10 +223,17 @@ npm run build
 Ventana del evento: abrió el 2026-09-19 09:00 (hora de Perú). El primer commit de esta versión en Soroban es `afe35da` (2026-09-19 10:47 -06:00, Fernando May).
 
 - **19-sep:** port a Soroban del contrato; frontend en Next.js; integración con Freighter; primeros despliegues en testnet (`CDVT6PV536ALTEEXCAVWASGUOG5PHUJCA2WTVWYPZI5Z5KKTECCL6GY4`, `CB7V3676CQBO5OL6DEXI5FORLG37IR2GR7LXCZD7DUZTMSUT7BEEINR3`); 40 pruebas de frontend.
-- **20-sep:** contrato v2 con correcciones de auditoría y soroban-sdk 28; certificado en PDF con QR; integración con el dashboard.
+- **20-sep:** segunda versión del contrato contable, con correcciones y soroban-sdk 28 (desplegada como `CB7V…`); certificado en PDF con QR; integración con el dashboard.
 - **21-sep:** liquidación real en XLM a través del SAC, constructor y permisos exclusivos para el creador del proyecto (Diego).
 - **23-sep:** lecturas on-chain en vivo, indexador de holders, panel de verificación del protocolo y etiquetas DEMO honestas (Fernando).
-- **24/25-sep:** integración de este código con su historial al repositorio de entrega; endurecimiento del contrato (controles de cumplimiento, eventos, TTL, errores tipados); nuevo despliegue en testnet y ciclo completo on-chain; se ajustó todo el copy de la aplicación para no usar lenguaje de productos financieros regulados; pruebas ejecutables y CI.
+- **24/25-sep:**
+  - integración de este código con su historial al repositorio de entrega;
+  - contrato **v2**: controles de cumplimiento, eventos, TTL y errores tipados;
+  - revisión de seguridad del contrato y **v2.1** con almacenamiento persistente por clave, que cierra los hallazgos alto y medios ([`docs/security-audit.md`](docs/security-audit.md));
+  - despliegues en testnet y ciclo completo on-chain;
+  - frontend integrado al contrato (unidades exactas, cumplimiento y eventos);
+  - se ajustó todo el copy para no usar lenguaje de productos financieros y se quitaron los datos inventados;
+  - pruebas ejecutables y CI.
 
 Este trabajo fue realizado por el equipo completo — ver [Equipo](#equipo).
 
@@ -295,8 +302,8 @@ Planes a futuro; no son promesas ni compromisos:
 
 - KYC real mediante SEP-12.
 - Conversión a moneda fiat a través de anchors (SEP-24 / SEP-6).
-- Almacenamiento persistente por cuenta (per-account storage).
 - Oráculo de telemetría IoT firmada para la producción de energía.
+- Auditoría externa del contrato antes de cualquier despliegue en producción. También queda cerrar los hallazgos bajos pendientes de la revisión interna: renovar el TTL del nombre del proyecto, pedir la firma del receptor en `transfer_ownership` y el handover del admin en dos pasos.
 - Una participación regulada y transferible (activo clásico con `AUTH_REQUIRED`/`AUTH_REVOCABLE` más un SAC), condicionada a que un regulador lo permita.
 
 ## Licencia

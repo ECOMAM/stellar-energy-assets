@@ -9,6 +9,10 @@ on:
     branches:
       - main
 
+# Permisos minimos: la CI solo necesita leer el repositorio
+permissions:
+  contents: read
+
 jobs:
   contract:
     runs-on: ubuntu-latest

@@ -9,6 +9,10 @@ name: Deploy Contract to Testnet
 on:
   workflow_dispatch:
 
+# Permisos minimos: el job solo necesita leer el repositorio
+permissions:
+  contents: read
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
@@ -45,9 +49,9 @@ jobs:
         env:
           DEPLOYER_SECRET: ${{ secrets.DEPLOYER_SECRET }}
         run: |
+          umask 077
           mkdir -p "$HOME/.config/stellar/identity"
           printf 'secret_key = "%s"\n' "$DEPLOYER_SECRET" > "$HOME/.config/stellar/identity/deployer.toml"
-          chmod 600 "$HOME/.config/stellar/identity/deployer.toml"
           echo "Deployer: $(stellar keys address deployer)"
 
       - name: Deploy to testnet
@@ -83,3 +87,8 @@ jobs:
           name: niko-project-wasm
           path: target/wasm32v1-none/release/niko_project.wasm
           retention-days: 30
+
+      # La clave no queda en el runner aunque un paso anterior falle
+      - name: Remove deployer key
+        if: always()
+        run: rm -f "$HOME/.config/stellar/identity/deployer.toml"
