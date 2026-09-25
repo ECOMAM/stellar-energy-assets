@@ -30,7 +30,8 @@ interface SigningModalProps {
   assetId: string;
   tokenCount: number;
   costXlm: number;
-  capacityWp: number;
+  /** illustrative capacity; null for a project without a descriptive sheet */
+  capacityWp: number | null;
   /* ── Wallet data ── */
   walletAddress: string;
   walletBalance: string;
@@ -240,9 +241,11 @@ export default function TransactionSigningModal({
                 <span className="font-mono text-[16px] font-bold text-slate-900 block mt-0.5">
                   {tokenCount} {tokenCount === 1 ? "participación" : "participaciones"}
                 </span>
-                <span className="text-[11px] text-emerald-600 font-medium">
-                  ~{capacityWp.toFixed(1)} Wp (ilustrativo)
-                </span>
+                {capacityWp != null && (
+                  <span className="text-[11px] text-emerald-600 font-medium">
+                    ~{capacityWp.toFixed(1)} Wp (ilustrativo)
+                  </span>
+                )}
               </div>
               <div className="p-3 bg-white rounded-lg border border-slate-200">
                 <span className="text-[11px] font-semibold text-slate-500 block uppercase tracking-wide">

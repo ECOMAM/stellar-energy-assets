@@ -5,8 +5,8 @@ import { useWallet } from "@/lib/WalletContext";
 import { CONTRACT_ID, TX_EXPLORER, EXPLORER_URL } from "@/lib/contract";
 import { describeTxError, parseContractErrorCode, errorText, txHashOf } from "@/lib/contractErrors";
 import { fetchDepositHistory, type DepositEvent } from "@/lib/events";
-import { getProjectMeta } from "@/lib/projectMeta";
-import { fetchOnChainProject, soldPercent, type OnChainProject } from "@/lib/projects";
+import { getProjectMeta, projectDisplayName } from "@/lib/projectMeta";
+import { lookupOnChainProject, projectPageState, soldPercent, type OnChainProject } from "@/lib/projects";
 import { clearReadCache } from "@/lib/readCache";
 import { readContractNative } from "@/lib/soroban";
 import {
@@ -19,8 +19,10 @@ import {
 } from "@/lib/purchaseChecks";
 import { formatXlm, stroopsToXlmNumber, toBigInt, type StroopsLike } from "@/lib/units";
 import { useComplianceStatus } from "@/hooks/useComplianceStatus";
+import ProjectImagePlaceholder from "@/components/ProjectImagePlaceholder";
 import TransactionSigningModal from "@/components/TransactionSigningModal";
 import TransactionSuccess from "@/components/TransactionSuccess";
+import { ProjectLoading, ProjectNotFound, ProjectUnreachable } from "./ProjectStates";
 
 /* ──────────────────── Constants ──────────────────── */
 
@@ -54,7 +56,8 @@ function formatDate(iso: string) {
 
 /* ──────────────────── Component ──────────────────── */
 
-export default function ProjectDetailClient({ id }: { id?: string }) {
+/** `id` is already validated by ProjectRoute (a positive integer from `?id=`). */
+export default function ProjectDetailClient({ id }: { id: number }) {
   const {
     connected,
     address,
@@ -64,7 +67,7 @@ export default function ProjectDetailClient({ id }: { id?: string }) {
     fetchBalance,
   } = useWallet();
 
-  const projectId = Number(id) > 0 ? Math.floor(Number(id)) : 1;
+  const projectId = id;
   const meta = getProjectMeta(projectId);
 
   /* ── Purchase calculator state: the raw input, validated before any BigInt ── */
@@ -74,9 +77,12 @@ export default function ProjectDetailClient({ id }: { id?: string }) {
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
 
-  /* ── On-chain project (v2 get_project(u64) + get_project_name(u64)) ── */
+  /* ── On-chain project: get_project(u64) + get_project_name(u64), next_project_id to tell "not found" ── */
   const [chainProject, setChainProject] = useState<OnChainProject | null>(null);
   const [chainError, setChainError] = useState<string | null>(null);
+  /** true once the chain proved the id does not exist (ProjectNotFound #6, or id >= next_project_id).
+   *  An RPC failure never sets it: that is the DEMO fallback / "sin conexión" case. */
+  const [notFound, setNotFound] = useState(false);
   /** true until the first get_project read settles (success or failure). The public RPC
    *  can take 10-20s, so the UI must not claim "sin conexión" while still in flight. */
   const [projectLoading, setProjectLoading] = useState(true);
@@ -87,13 +93,18 @@ export default function ProjectDetailClient({ id }: { id?: string }) {
 
   const loadProject = useCallback(async () => {
     try {
-      const p = await fetchOnChainProject(projectId);
-      setChainProject(p);
-      setChainError(null);
-      return p;
-    } catch (e) {
-      console.warn(`get_project(${projectId}) failed, using DEMO fallback`, e);
-      setChainError(describeTxError(e));
+      const r = await lookupOnChainProject(projectId);
+      if (r.status === "found") {
+        setChainProject(r.project);
+        setChainError(null);
+        return r.project;
+      }
+      if (r.status === "not_found") {
+        setNotFound(true);
+      } else {
+        console.warn(`get_project(${projectId}) failed, using DEMO fallback if available`, r.error);
+        setChainError(describeTxError(r.error));
+      }
       return null;
     } finally {
       setProjectLoading(false);
@@ -104,6 +115,12 @@ export default function ProjectDetailClient({ id }: { id?: string }) {
     setProjectLoading(true);
     void loadProject();
   }, [loadProject]);
+
+  const retryLoad = () => {
+    setProjectLoading(true);
+    setChainError(null);
+    void loadProject();
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -139,21 +156,22 @@ export default function ProjectDetailClient({ id }: { id?: string }) {
   }, [loadWalletData]);
 
   const isDemoChain = !chainProject;
+  /** DEMO values of the project's sheet; null without a sheet (then nothing is rendered from them). */
   const fb = meta.fallback;
-  const project = chainProject ?? {
+  const project: OnChainProject = chainProject ?? {
     id: projectId,
-    name: fb.name,
+    name: fb?.name ?? "",
     creator: "",
-    totalSupply: fb.totalSupply,
-    minted: fb.minted,
+    totalSupply: fb?.totalSupply ?? BigInt(0),
+    minted: fb?.minted ?? BigInt(0),
     minPurchase: BigInt(1),
-    price: fb.price,
+    price: fb?.price ?? BigInt(0),
     active: true,
     totalEnergyKwh: BigInt(0),
     totalRevenue: BigInt(0),
     createdAt: BigInt(0),
   };
-  const projectName = project.name || fb.name;
+  const projectName = projectDisplayName(projectId, project.name);
   const fundingPct = soldPercent(project);
   const remaining = remainingSupply(project);
   const onChainEnergy = chainProject ? chainProject.totalEnergyKwh : null;
@@ -286,6 +304,17 @@ export default function ProjectDetailClient({ id }: { id?: string }) {
     14, 0,
   ];
 
+  /* ── Page state (after every hook). A project without a sheet has no DEMO values:
+        it gets a loading or "sin conexión" screen instead of invented numbers. ── */
+  const pageState = projectPageState({ id: projectId, notFound, project: chainProject, loading: projectLoading });
+  if (pageState === "not_found") return <ProjectNotFound reason="not_on_chain" id={projectId} />;
+  if (!fb && pageState === "loading") return <ProjectLoading id={projectId} />;
+  if (!fb && pageState === "unreachable") {
+    return <ProjectUnreachable id={projectId} error={chainError} onRetry={retryLoad} />;
+  }
+  /** Illustrative figures (capacity, CO2) exist only for projects with a sheet. */
+  const illustrativeWp = meta.hasSheet ? capacityAdjudicada : null;
+
   return (
     <div className="relative min-h-screen bg-slate-50 font-body text-slate-900">
       {/* ═══════════ A) Ambient glow background ═══════════ */}
@@ -313,7 +342,7 @@ export default function ProjectDetailClient({ id }: { id?: string }) {
               <span className="relative flex h-1.5 w-1.5">
                 <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-amber-500" />
               </span>
-              Proyecto demo · datos del activo ficticios
+              {meta.hasSheet ? "Proyecto demo · datos del activo ficticios" : "Proyecto registrado on-chain · sin ficha descriptiva"}
             </span>
             <span className="font-mono text-[11px] text-slate-400">
               Stellar Testnet
@@ -332,12 +361,16 @@ export default function ProjectDetailClient({ id }: { id?: string }) {
           <span className="material-symbols-outlined text-[14px]">
             chevron_right
           </span>
-          <span>Per&uacute;</span>
-          <span className="material-symbols-outlined text-[14px]">
-            chevron_right
-          </span>
+          {meta.hasSheet && (
+            <>
+              <span>Per&uacute;</span>
+              <span className="material-symbols-outlined text-[14px]">
+                chevron_right
+              </span>
+            </>
+          )}
           <span className="font-medium text-slate-900">
-            {projectName} ({meta.capacity})
+            {meta.hasSheet ? `${projectName} (${meta.capacity})` : projectName}
           </span>
           <span className="ml-2 inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[10px] font-semibold text-slate-500">
             Oráculo IoT firmado: roadmap
@@ -368,9 +401,11 @@ export default function ProjectDetailClient({ id }: { id?: string }) {
               </span>
               Sin auditoría legal: demo de testnet
             </span>
-            <span className="font-mono text-[11px] text-slate-400">
-              Asset ID: {meta.asset}
-            </span>
+            {meta.asset && (
+              <span className="font-mono text-[11px] text-slate-400">
+                Asset ID: {meta.asset}
+              </span>
+            )}
           </div>
 
           <h1 className="font-display text-[32px] font-bold leading-tight text-slate-900 lg:text-[42px]">
@@ -384,7 +419,8 @@ export default function ProjectDetailClient({ id }: { id?: string }) {
           </p>
           {chainError && (
             <p className="mt-2 max-w-2xl text-[12px] text-amber-700">
-              No se pudo leer el proyecto on-chain ({chainError}). Se muestran valores DEMO.
+              No se pudo leer el proyecto on-chain ({chainError}).{" "}
+              {isDemoChain ? "Se muestran valores DEMO." : "Se muestran los últimos datos leídos."}
             </p>
           )}
 
@@ -421,7 +457,7 @@ export default function ProjectDetailClient({ id }: { id?: string }) {
           {[
             {
               icon: "solar_power",
-              label: "Capacidad (demo)",
+              label: meta.hasSheet ? "Capacidad (demo)" : "Capacidad",
               value: meta.capacity,
               color: "text-emerald-600",
               bg: "bg-emerald-50",
@@ -499,34 +535,43 @@ export default function ProjectDetailClient({ id }: { id?: string }) {
         <div className="grid gap-8 lg:grid-cols-12">
           {/* ──── LEFT COLUMN (8 cols) ──── */}
           <div className="space-y-8 lg:col-span-8">
-            {/* Hero image */}
+            {/* Hero image (a neutral placeholder for a project without a sheet) */}
             <div className="relative overflow-hidden rounded-2xl border border-slate-200 shadow-lg">
-              <img
-                src={meta.image}
-                alt={`Imagen ilustrativa de ${projectName}`}
-                className="h-[320px] w-full object-cover"
-              />
-              <div className="absolute inset-0 bg-gradient-to-t from-slate-900/60 via-slate-900/10 to-transparent" />
-              <div className="absolute bottom-4 left-4 flex flex-wrap items-center gap-2">
-                <span className="inline-flex items-center gap-1 rounded-full border border-white/30 bg-white/20 px-3 py-1 text-[11px] font-semibold text-white backdrop-blur-md">
-                  <span className="material-symbols-outlined text-[14px]">
-                    image
-                  </span>
-                  Imagen ilustrativa (stock)
-                </span>
-                <span className="inline-flex items-center gap-1 rounded-full border border-white/30 bg-white/20 px-3 py-1 text-[11px] font-semibold text-white backdrop-blur-md">
-                  <span className="material-symbols-outlined text-[14px]">
-                    location_on
-                  </span>
-                  {meta.location}
-                </span>
-              </div>
+              {meta.image ? (
+                <>
+                  <img
+                    src={meta.image}
+                    alt={`Imagen ilustrativa de ${projectName}`}
+                    className="h-[320px] w-full object-cover"
+                  />
+                  <div className="absolute inset-0 bg-gradient-to-t from-slate-900/60 via-slate-900/10 to-transparent" />
+                  <div className="absolute bottom-4 left-4 flex flex-wrap items-center gap-2">
+                    <span className="inline-flex items-center gap-1 rounded-full border border-white/30 bg-white/20 px-3 py-1 text-[11px] font-semibold text-white backdrop-blur-md">
+                      <span className="material-symbols-outlined text-[14px]">
+                        image
+                      </span>
+                      Imagen ilustrativa (stock)
+                    </span>
+                    <span className="inline-flex items-center gap-1 rounded-full border border-white/30 bg-white/20 px-3 py-1 text-[11px] font-semibold text-white backdrop-blur-md">
+                      <span className="material-symbols-outlined text-[14px]">
+                        location_on
+                      </span>
+                      {meta.location}
+                    </span>
+                  </div>
+                </>
+              ) : (
+                <ProjectImagePlaceholder className="h-[320px] w-full" />
+              )}
             </div>
 
             {/* Location metadata */}
             <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
               <h3 className="mb-4 font-display text-[16px] font-bold text-slate-900">
-                Informaci&oacute;n del Activo <span className="text-[11px] font-mono font-semibold text-amber-700">(demo, datos ficticios)</span>
+                Informaci&oacute;n del Activo{" "}
+                <span className="text-[11px] font-mono font-semibold text-amber-700">
+                  {meta.hasSheet ? "(demo, datos ficticios)" : "(sin ficha descriptiva)"}
+                </span>
               </h3>
               <div className="grid gap-4 sm:grid-cols-3">
                 <div className="rounded-lg bg-slate-50 p-4">
@@ -534,10 +579,10 @@ export default function ProjectDetailClient({ id }: { id?: string }) {
                     Ubicaci&oacute;n
                   </div>
                   <div className="text-[14px] font-medium text-slate-900">
-                    {meta.location}
+                    {meta.location || "No informada"}
                   </div>
                   <div className="mt-1 font-mono text-[12px] text-slate-500">
-                    Referencial
+                    {meta.hasSheet ? "Referencial" : "Sin ficha descriptiva"}
                   </div>
                 </div>
                 <div className="rounded-lg bg-slate-50 p-4">
@@ -565,23 +610,25 @@ export default function ProjectDetailClient({ id }: { id?: string }) {
               </div>
             </div>
 
-            {/* Telemetry section (illustrative) */}
+            {/* Telemetry section (illustrative; only the on-chain anchor without a sheet) */}
             <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
               <div className="mb-4 flex items-center justify-between">
                 <h3 className="flex items-center gap-2 font-display text-[16px] font-bold text-slate-900">
                   <span className="material-symbols-outlined text-[20px] text-emerald-600">
                     sensors
                   </span>
-                  Telemetr&iacute;a (simulada)
+                  {meta.hasSheet ? <>Telemetr&iacute;a (simulada)</> : <>Energ&iacute;a reportada</>}
                 </h3>
                 <span className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-700">
                   <span className="material-symbols-outlined text-[10px]">
                     science
                   </span>
-                  DEMO · oráculo IoT en roadmap
+                  {meta.hasSheet ? "DEMO · oráculo IoT en roadmap" : "Oráculo IoT en roadmap"}
                 </span>
               </div>
 
+              {meta.hasSheet && (
+              <>
               {/* Time switcher tabs */}
               <div className="mb-5 flex gap-1 rounded-lg bg-slate-100 p-1">
                 {(["Hoy", "7 Días", "Este Mes", "Histórico"] as const).map(
@@ -652,9 +699,11 @@ export default function ProjectDetailClient({ id }: { id?: string }) {
                   </div>
                 ))}
               </div>
+              </>
+              )}
               {/* On-chain anchor vs. simulated gauges */}
               <div
-                className={`mb-5 flex items-center gap-2 px-3 py-1.5 rounded-lg border text-[11px] font-mono ${
+                className={`${meta.hasSheet ? "mb-5 " : ""}flex items-center gap-2 px-3 py-1.5 rounded-lg border text-[11px] font-mono ${
                   projectLoading
                     ? "bg-slate-50 border-slate-200 text-slate-600"
                     : isDemoChain
@@ -669,13 +718,14 @@ export default function ProjectDetailClient({ id }: { id?: string }) {
                   ? "Cargando datos on-chain…"
                   : isDemoChain
                     ? "DEMO • Simulado — sin conexión al contrato"
-                    : `Medidores simulados. Anclado on-chain por el emisor: ${(onChainEnergy ?? BigInt(0)).toLocaleString("en-US")} kWh`}
+                    : `${meta.hasSheet ? "Medidores simulados. " : ""}Anclado on-chain por el emisor: ${(onChainEnergy ?? BigInt(0)).toLocaleString("en-US")} kWh`}
                 {claimable != null && connected && (
                   <span className="ml-auto font-bold">por reclamar: {formatXlm(claimable)} XLM</span>
                 )}
               </div>
 
               {/* SVG solar production curve */}
+              {meta.hasSheet && (
               <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
                 <div className="mb-2 text-[12px] font-medium text-slate-500">
                   Curva de Producci&oacute;n Solar (ilustrativa) &mdash; {telemetryTab}
@@ -744,6 +794,7 @@ export default function ProjectDetailClient({ id }: { id?: string }) {
                   </text>
                 </svg>
               </div>
+              )}
             </div>
 
             {/* How value flows (what the contract really does) */}
@@ -982,26 +1033,30 @@ export default function ProjectDetailClient({ id }: { id?: string }) {
                       {formatXlm(totalPriceStroops)} XLM
                     </span>
                   </div>
-                  <div className="flex justify-between text-[13px]">
-                    <span className="text-slate-500">
-                      Capacidad equivalente (ilustrativa)
-                    </span>
-                    <span className="font-mono font-bold text-emerald-600">
-                      {fmt(capacityAdjudicada, 1)} Wp
-                    </span>
-                  </div>
+                  {illustrativeWp != null && (
+                    <div className="flex justify-between text-[13px]">
+                      <span className="text-slate-500">
+                        Capacidad equivalente (ilustrativa)
+                      </span>
+                      <span className="font-mono font-bold text-emerald-600">
+                        {fmt(illustrativeWp, 1)} Wp
+                      </span>
+                    </div>
+                  )}
                   <div className="flex justify-between text-[13px]">
                     <span className="text-slate-500">Precio por participación</span>
                     <span className="font-mono font-bold text-emerald-600">
                       {fmt(pricePerToken, 2)} XLM
                     </span>
                   </div>
-                  <div className="flex justify-between text-[13px]">
-                    <span className="text-slate-500">CO&#x2082; (estimación demo)</span>
-                    <span className="font-mono font-bold text-emerald-600">
-                      {fmt(co2Mitigado, 2)} ton/a&ntilde;o
-                    </span>
-                  </div>
+                  {meta.hasSheet && (
+                    <div className="flex justify-between text-[13px]">
+                      <span className="text-slate-500">CO&#x2082; (estimación demo)</span>
+                      <span className="font-mono font-bold text-emerald-600">
+                        {fmt(co2Mitigado, 2)} ton/a&ntilde;o
+                      </span>
+                    </div>
+                  )}
                 </div>
 
                 {/* Wallet pill */}
@@ -1152,10 +1207,10 @@ export default function ProjectDetailClient({ id }: { id?: string }) {
         txHash={txHash}
         projectName={projectName}
         projectFlag={meta.flag}
-        assetId={meta.asset}
+        assetId={meta.asset || `Proyecto #${projectId}`}
         tokenCount={tokenCount}
         costXlm={costXlm}
-        capacityWp={capacityAdjudicada}
+        capacityWp={illustrativeWp}
         walletAddress={address || ""}
         walletBalance={balance}
         contractId={CONTRACT_ID}
@@ -1174,11 +1229,11 @@ export default function ProjectDetailClient({ id }: { id?: string }) {
         costXlm={costXlm}
         projectName={projectName}
         projectFlag={meta.flag}
-        assetId={meta.asset}
+        assetId={meta.asset || `Proyecto #${projectId}`}
         walletAddress={address || ""}
-        capacityWp={capacityAdjudicada}
+        capacityWp={illustrativeWp}
         contractId={CONTRACT_ID}
-        location={meta.location}
+        location={meta.location || "Ubicación no informada"}
       />
     </div>
   );

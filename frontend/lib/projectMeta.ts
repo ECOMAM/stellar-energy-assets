@@ -6,11 +6,17 @@
  * `fallback` is shown ONLY when the chain is unreachable and is always
  * labelled DEMO in the UI. Its values mirror the testnet configuration at the
  * time of writing (price in stroops, 1 XLM = 10^7 stroops).
+ *
+ * A project without a sheet here (any project created on-chain later) gets
+ * the generic presentation of getProjectMeta: its on-chain name and numbers,
+ * a neutral placeholder instead of a photo, and no invented location,
+ * capacity or DEMO values.
  */
 
 import { xlmToStroops } from "./units";
 
-export type ProjectMeta = {
+/** Descriptive sheet of a demo project. */
+export type ProjectSheet = {
   location: string;
   flag: string;
   asset: string;
@@ -26,12 +32,22 @@ export type ProjectMeta = {
   };
 };
 
+/** What the UI renders for a project id: its sheet, or the generic presentation. */
+export type ProjectMeta = Omit<ProjectSheet, "image" | "fallback"> & {
+  /** false: no sheet, generic presentation (location, flag and asset are empty) */
+  hasSheet: boolean;
+  /** null: no image, the UI draws a neutral placeholder */
+  image: string | null;
+  /** null: nothing to show if the chain is unreachable */
+  fallback: ProjectSheet["fallback"] | null;
+};
+
 const IMG_ROOFTOP =
   "https://images.unsplash.com/photo-1509391366360-2e959784a276?w=800&h=500&fit=crop";
 const IMG_DESERT =
   "https://images.unsplash.com/photo-1508514177221-188b1cf16e9d?w=800&h=500&fit=crop";
 
-export const PROJECT_META: Readonly<Record<number, ProjectMeta>> = {
+export const PROJECT_META: Readonly<Record<number, ProjectSheet>> = {
   1: {
     location: "Arequipa, Perú",
     flag: "🇵🇪",
@@ -82,20 +98,34 @@ export const PROJECT_META: Readonly<Record<number, ProjectMeta>> = {
   },
 };
 
-/** Ids that have presentation metadata (used when the chain is unreachable). */
+/** Ids that have a sheet (the labelled DEMO list when the chain is unreachable). */
 export const META_PROJECT_IDS = Object.keys(PROJECT_META).map(Number);
 
-const GENERIC_META: ProjectMeta = {
-  location: "Perú",
-  flag: "🇵🇪",
-  asset: "SUN",
-  capacity: "—",
-  capacityKwp: 0,
-  image: IMG_ROOFTOP,
-  description: "Proyecto de demostración (datos ficticios) registrado on-chain en Stellar testnet.",
-  fallback: { name: "Proyecto demo", totalSupply: BigInt(0), minted: BigInt(0), price: BigInt(0) },
-};
+/** Description of a project without a sheet. */
+export const GENERIC_PROJECT_DESCRIPTION = "Proyecto registrado on-chain (sin ficha descriptiva).";
+
+function sheetOf(id: number): ProjectSheet | null {
+  return Object.prototype.hasOwnProperty.call(PROJECT_META, id) ? PROJECT_META[id] : null;
+}
 
 export function getProjectMeta(id: number): ProjectMeta {
-  return PROJECT_META[id] ?? { ...GENERIC_META, asset: `SUN-${id}` };
+  const sheet = sheetOf(id);
+  if (sheet) return { ...sheet, hasSheet: true };
+  return {
+    hasSheet: false,
+    location: "",
+    flag: "",
+    asset: "",
+    capacity: "—",
+    capacityKwp: 0,
+    image: null,
+    description: GENERIC_PROJECT_DESCRIPTION,
+    fallback: null,
+  };
+}
+
+/** The on-chain name; else the sheet's DEMO name; else "Proyecto #id". */
+export function projectDisplayName(id: number, onChainName?: string | null): string {
+  const name = (onChainName ?? "").trim();
+  return name || sheetOf(id)?.fallback.name || `Proyecto #${id}`;
 }

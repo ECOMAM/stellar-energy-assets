@@ -1,12 +1,20 @@
 "use client";
 
 import { useState, useCallback, useEffect, useMemo } from "react";
+import { useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { useWallet, type SignAndSend } from "@/lib/WalletContext";
 import { CONTRACT_ID, TX_EXPLORER } from "@/lib/contract";
 import { describeTxError, PARTICIPANT_NOT_APPROVED_MESSAGE, txHashOf } from "@/lib/contractErrors";
-import { getProjectMeta, META_PROJECT_IDS } from "@/lib/projectMeta";
-import { soldPercent, type OnChainProject } from "@/lib/projects";
+import { getProjectMeta, META_PROJECT_IDS, PROJECT_META, projectDisplayName } from "@/lib/projectMeta";
+import {
+  fetchPortfolio,
+  projectHref,
+  soldPercent,
+  visibleProjects,
+  type OnChainProject,
+  type PortfolioPosition,
+} from "@/lib/projects";
 import { readContractNative } from "@/lib/soroban";
 import { formatXlm, toBigIntOr, xlmToStroops } from "@/lib/units";
 import PdfCertificate from "@/components/PdfCertificate";
@@ -44,8 +52,9 @@ function fromChain(p: OnChainProject): DisplayProject {
   const meta = getProjectMeta(p.id);
   return {
     id: p.id,
-    name: p.name || meta.fallback.name,
-    location: meta.location,
+    name: projectDisplayName(p.id, p.name),
+    // A project without a descriptive sheet has no location: say so instead of inventing one.
+    location: meta.location || "Sin ficha descriptiva",
     capacity: meta.capacity,
     creator: p.creator,
     totalSupply: p.totalSupply,
@@ -62,13 +71,13 @@ function fromChain(p: OnChainProject): DisplayProject {
 
 function demoProjects(): DisplayProject[] {
   return META_PROJECT_IDS.map((id) => {
-    const meta = getProjectMeta(id);
-    const f = meta.fallback;
+    const sheet = PROJECT_META[id];
+    const f = sheet.fallback;
     return {
       id,
       name: f.name,
-      location: meta.location,
-      capacity: meta.capacity,
+      location: sheet.location,
+      capacity: sheet.capacity,
       creator: null,
       totalSupply: f.totalSupply,
       minted: f.minted,
@@ -83,6 +92,12 @@ function demoProjects(): DisplayProject[] {
   });
 }
 
+/** Open any project's detail page: /project/?id=N exists for every id (one static page). */
+function useOpenProject() {
+  const router = useRouter();
+  return useCallback((id: number) => router.push(projectHref(id)), [router]);
+}
+
 /** On-chain projects, or the labelled DEMO fallback while loading / if the RPC fails. */
 function useDisplayProjects() {
   const { projects, loading, reload } = useOnChainProjects();
@@ -90,13 +105,15 @@ function useDisplayProjects() {
   return { projects: display, onChain: projects, loading, reload };
 }
 
-type Position = { balance: bigint; claimable: bigint; claimed: bigint };
-
 const ZERO = BigInt(0);
 
-/** get_portfolio(address, ids) -> Map<projectId, Position>. null while unknown. */
+/**
+ * get_portfolio(address, ids) -> Map<projectId, Position>, null while unknown.
+ * Every project is covered: the ids go in chunks of at most 12 per call
+ * (lib/projects.ts fetchPortfolio) and the results are merged.
+ */
 function usePortfolio(address: string | null | undefined, ids: number[]) {
-  const [positions, setPositions] = useState<Map<number, Position> | null>(null);
+  const [positions, setPositions] = useState<Map<number, PortfolioPosition> | null>(null);
   const [loading, setLoading] = useState(false);
   const key = ids.join(",");
 
@@ -108,16 +125,7 @@ function usePortfolio(address: string | null | undefined, ids: number[]) {
     }
     setLoading(true);
     try {
-      const raw = await readContractNative<Array<Record<string, unknown>>>("get_portfolio", [address, list]);
-      const map = new Map<number, Position>();
-      for (const p of Array.isArray(raw) ? raw : []) {
-        map.set(Number(toBigIntOr(p.project_id, ZERO)), {
-          balance: toBigIntOr(p.token_balance, ZERO),
-          claimable: toBigIntOr(p.claimable_amount, ZERO),
-          claimed: toBigIntOr(p.total_claimed, ZERO),
-        });
-      }
-      setPositions(map);
+      setPositions(await fetchPortfolio(address, list));
     } catch (e) {
       console.warn("get_portfolio failed", e);
       setPositions(null);
@@ -554,6 +562,7 @@ function DashboardView({
   const [claimMsg, setClaimMsg] = useState<{ tone: "error" | "success"; text: string; hashes: string[] } | null>(null);
   const { metrics: holderMetrics } = useHolderMetrics();
   const { projects, onChain, loading: isChainLoading } = useDisplayProjects();
+  const openProject = useOpenProject();
   const ids = useMemo(() => (onChain ?? []).map((p) => p.id), [onChain]);
   const { positions, loading: isPortfolioLoading, reload: reloadPortfolio } = usePortfolio(
     connected ? address : null,
@@ -685,18 +694,18 @@ function DashboardView({
             onClick={() => setView("projects")}
             className="text-xs text-emerald-600 hover:text-emerald-700"
           >
-            Ver todos{" "}
+            Ver todos ({projects.length}){" "}
             <span className="material-symbols-outlined inline text-[12px]">
               chevron_right
             </span>
           </button>
         </div>
         <div className="grid gap-4 lg:grid-cols-3">
-          {projects.slice(0, 3).map((p) => (
+          {visibleProjects(projects, false).map((p) => (
             <ProjectCard
               key={p.id}
               project={p}
-              onSelect={() => setView("projects")}
+              onSelect={() => openProject(p.id)}
               isLoading={isChainLoading}
             />
           ))}
@@ -1415,8 +1424,9 @@ function AdminView() {
   );
 }
 
-function ProjectsView({ notify }: { notify: (m: string) => void }) {
+function ProjectsView() {
   const { projects, loading } = useDisplayProjects();
+  const openProject = useOpenProject();
   return (
     <div>
       <h1 className="mb-2 text-3xl font-bold text-slate-900 font-display">
@@ -1431,11 +1441,7 @@ function ProjectsView({ notify }: { notify: (m: string) => void }) {
             key={p.id}
             project={p}
             isLoading={loading}
-            onSelect={() => {
-              // Detail pages are statically exported for the ids with metadata.
-              if (META_PROJECT_IDS.includes(p.id)) window.location.href = `/project/${p.id}/`;
-              else notify(`${p.name}: sin página de detalle en esta demo`);
-            }}
+            onSelect={() => openProject(p.id)}
           />
         ))}
       </div>
@@ -1521,7 +1527,7 @@ export default function Page() {
                 address={address}
               />
             )}
-            {view === "projects" && <ProjectsView notify={notify} />}
+            {view === "projects" && <ProjectsView />}
             {view === "claim" && (
               <ClaimView
                 signAndSend={signAndSend}

@@ -17,7 +17,9 @@ interface TransactionSuccessProps {
   projectFlag: string;
   assetId: string;
   walletAddress: string;
-  capacityWp: number;
+  /** illustrative capacity; null for a project without a descriptive sheet
+   *  (then no illustrative figure, capacity or CO₂, is shown) */
+  capacityWp: number | null;
   contractId: string;
   /** off-chain demo location of the project */
   location?: string;
@@ -229,7 +231,7 @@ export default function TransactionSuccess({
                       Capacidad equivalente (ilustrativa)
                     </span>
                     <span className="text-[13px] text-emerald-600 font-mono font-bold">
-                      {capacityWp.toFixed(1)} Wp
+                      {capacityWp != null ? `${capacityWp.toFixed(1)} Wp` : "—"}
                     </span>
                   </div>
                   <div>
@@ -318,19 +320,21 @@ export default function TransactionSuccess({
                   Pagaste {costXlm.toLocaleString("en-US")} XLM al contrato
                   Soroban del proyecto.
                 </p>
-                <div className="p-3 bg-white rounded-lg flex items-center gap-3 border border-slate-100">
-                  <span className="material-symbols-outlined text-orange-600 text-2xl">
-                    bolt
-                  </span>
-                  <div className="flex flex-col">
-                    <span className="text-[11px] text-slate-500 uppercase">
-                      Capacidad equivalente (ilustrativa)
+                {capacityWp != null && (
+                  <div className="p-3 bg-white rounded-lg flex items-center gap-3 border border-slate-100">
+                    <span className="material-symbols-outlined text-orange-600 text-2xl">
+                      bolt
                     </span>
-                    <span className="text-[14px] text-slate-900 font-bold font-mono">
-                      {capacityWp.toFixed(1)} Wp
-                    </span>
+                    <div className="flex flex-col">
+                      <span className="text-[11px] text-slate-500 uppercase">
+                        Capacidad equivalente (ilustrativa)
+                      </span>
+                      <span className="text-[14px] text-slate-900 font-bold font-mono">
+                        {capacityWp.toFixed(1)} Wp
+                      </span>
+                    </div>
                   </div>
-                </div>
+                )}
               </div>
 
               {/* Next revenue distribution card */}
@@ -360,21 +364,23 @@ export default function TransactionSuccess({
                   </div>
                 </div>
 
-                {/* CO₂ metric */}
-                <div className="flex items-start gap-3 pt-2">
-                  <span className="material-symbols-outlined text-emerald-600 text-2xl shrink-0 mt-0.5">
-                    eco
-                  </span>
-                  <div className="flex flex-col">
-                    <span className="text-[14px] text-slate-900 font-semibold">
-                      ~{co2Kg.toLocaleString("en-US")} kg CO₂e / año (estimación)
+                {/* CO₂ metric (illustrative: only for a project with a descriptive sheet) */}
+                {capacityWp != null && (
+                  <div className="flex items-start gap-3 pt-2">
+                    <span className="material-symbols-outlined text-emerald-600 text-2xl shrink-0 mt-0.5">
+                      eco
                     </span>
-                    <p className="text-[12px] text-slate-500">
-                      Estimación ilustrativa de la demo; no se emiten
-                      certificados de energía renovable.
-                    </p>
+                    <div className="flex flex-col">
+                      <span className="text-[14px] text-slate-900 font-semibold">
+                        ~{co2Kg.toLocaleString("en-US")} kg CO₂e / año (estimación)
+                      </span>
+                      <p className="text-[12px] text-slate-500">
+                        Estimación ilustrativa de la demo; no se emiten
+                        certificados de energía renovable.
+                      </p>
+                    </div>
                   </div>
-                </div>
+                )}
               </div>
 
               {/* Non-custodial notice */}
@@ -420,7 +426,7 @@ export default function TransactionSuccess({
                 data={{
                   projectName,
                   location: "Red Stellar Soroban",
-                  capacity: `${capacityWp.toFixed(1)} Wp (ilustrativo)`,
+                  capacity: capacityWp != null ? `${capacityWp.toFixed(1)} Wp (ilustrativo)` : "—",
                   tokenAmount: String(tokenCount),
                   pricePaid: `${costXlm} XLM`,
                   walletAddress,
