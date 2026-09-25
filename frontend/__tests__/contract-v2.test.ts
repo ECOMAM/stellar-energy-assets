@@ -72,6 +72,10 @@ describe("encodeContractArgs (v2 signatures)", () => {
     expect(sdk.scValToNative(vec)).toEqual([1n, 2n, 3n]);
   });
 
+  it("names the deployed contract version in its errors", () => {
+    expect(() => encodeContractArgs(sdk, "mint", [])).toThrow(/contrato v2\.1/);
+  });
+
   it("rejects wrong arity, negative amounts and bad addresses", () => {
     expect(() => encodeContractArgs(sdk, "purchase_tokens", [BUYER, 1])).toThrow(/espera 3/);
     expect(() => encodeContractArgs(sdk, "purchase_tokens", [BUYER, 1, -1])).toThrow();
@@ -109,15 +113,15 @@ describe("contract error map", () => {
     expect(PARTICIPANT_NOT_APPROVED_MESSAGE).toContain("KYC simulado para esta demo");
   });
 
-  it("disambiguates #10: sold out vs. the XLM SAC balance error", () => {
-    expect(describeContractError(10, { method: "purchase_tokens", supplyAvailable: false })).toBe(
-      CONTRACT_ERRORS[10].message
-    );
-    expect(describeContractError(10, { method: "purchase_tokens", supplyAvailable: true })).toBe(
+  it("v2.1: #10 always means supply and #11 always means balance (no disambiguation)", () => {
+    expect(describeContractError(10)).toBe(`${CONTRACT_ERRORS[10].message} (código #10 InsufficientSupply)`);
+    expect(describeTxError("HostError: Error(Contract, #10)")).toMatch(/supply/);
+    expect(describeTxError("HostError: Error(Contract, #10)")).not.toMatch(/saldo/i);
+    expect(describeTxError("HostError: Error(Contract, #11)")).toMatch(/^Saldo insuficiente/);
+    // Network-level balance failures keep the XLM top-up message.
+    expect(describeTxError(new Error("La red rechazó la transacción (ERROR: txInsufficientBalance)"))).toBe(
       XLM_BALANCE_TOO_LOW_MESSAGE
     );
-    expect(describeContractError(10, { method: "purchase_tokens" })).toMatch(/supply.*saldo/);
-    expect(describeContractError(10, { method: "deposit_revenue" })).toBe(XLM_BALANCE_TOO_LOW_MESSAGE);
   });
 
   it("maps wallet failures to Spanish messages", () => {

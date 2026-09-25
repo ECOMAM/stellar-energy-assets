@@ -73,7 +73,9 @@ export default function Header() {
               Dashboard
             </a>
             <a
-              href="#"
+              href="https://github.com/ECOMAM/stellar-energy-assets#readme"
+              target="_blank"
+              rel="noopener noreferrer"
               className="text-stone-600 hover:text-emerald-800 hover:bg-emerald-50 rounded-full px-4 py-1.5 text-xs font-medium transition-all flex items-center gap-1"
             >
               Docs{" "}

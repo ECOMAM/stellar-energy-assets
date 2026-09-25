@@ -1,5 +1,5 @@
 /**
- * Holder Indexer — Stellar Testnet (Soroban RPC), contract v2.
+ * Holder Indexer — Stellar Testnet (Soroban RPC), contract v2.1.
  *
  * Strategy (MVP without a database):
  * 1. Read the v2 `purchase` events of CONTRACT_ID with getEvents. Wire format
@@ -17,7 +17,7 @@
 import { CONTRACT_ID, DEMO_PARTICIPANTS } from "./contract";
 import { fetchContractEvents, type DecodedContractEvent } from "./events";
 import { readContractNative } from "./soroban";
-import { toBigInt, type StroopsLike } from "./units";
+import { toBigIntOr } from "./units";
 
 const CACHE_KEY = "niko-holder-cache";
 const KNOWN_ADDR_KEY = "niko-known-addresses";
@@ -107,14 +107,6 @@ export type PurchaseEvent = {
   ledger?: number;
 };
 
-function big(v: unknown): bigint | null {
-  try {
-    return v === undefined || v === null ? null : toBigInt(v as StroopsLike);
-  } catch {
-    return null;
-  }
-}
-
 /**
  * Parse one decoded (scValToNative) `purchase` event:
  * topics ["purchase", project_id, buyer], data {amount, total_price}.
@@ -126,12 +118,12 @@ export function parsePurchaseEvent(
   if (!Array.isArray(evt.topics) || evt.topics.length !== 3) return null;
   const [name, pid, buyer] = evt.topics;
   if (name !== "purchase") return null;
-  const projectId = big(pid);
+  const projectId = toBigIntOr(pid, null);
   if (projectId === null || typeof buyer !== "string" || !isValidAddress(buyer)) return null;
   const d = evt.data as Record<string, unknown> | null;
   if (!d || typeof d !== "object") return null;
-  const amount = big(d.amount);
-  const totalPrice = big(d.total_price);
+  const amount = toBigIntOr(d.amount, null);
+  const totalPrice = toBigIntOr(d.total_price, null);
   if (amount === null || totalPrice === null) return null;
   return { projectId, buyer, amount, totalPrice, txHash: evt.txHash, ledger: evt.ledger };
 }
@@ -198,7 +190,7 @@ function writeKnownAddresses(addrs: string[]): void {
 // ---------------------------------------------------------------------------
 
 async function fetchProjectIds(): Promise<number[]> {
-  const next = Number(toBigInt((await readContractNative<StroopsLike>("next_project_id")) ?? 1));
+  const next = Number(toBigIntOr(await readContractNative("next_project_id"), BigInt(1)));
   const ids: number[] = [];
   for (let i = 1; i < next && ids.length < 12; i++) ids.push(i);
   return ids;
@@ -212,8 +204,8 @@ async function probeHolder(addr: string, ids: number[]): Promise<{ balance: bigi
   let balance = BigInt(0);
   let claimable = false;
   for (const p of Array.isArray(positions) ? positions : []) {
-    balance += big(p.token_balance) ?? BigInt(0);
-    if ((big(p.claimable_amount) ?? BigInt(0)) > BigInt(0)) claimable = true;
+    balance += toBigIntOr(p.token_balance, BigInt(0));
+    if (toBigIntOr(p.claimable_amount, BigInt(0)) > BigInt(0)) claimable = true;
   }
   return { balance, claimable };
 }
@@ -314,5 +306,3 @@ async function indexHolders(): Promise<HolderMetrics> {
     return { holderCount: null, lastIndexedAt: nowIso, source: "Stellar Testnet", status: "indexing" };
   }
 }
-
-export const HOLDER_CACHE_KEY = CACHE_KEY;

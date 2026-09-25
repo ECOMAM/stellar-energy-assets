@@ -11,10 +11,6 @@ export const CONTRACT_ID =
 export const CONTRACT_DEPLOY_LEDGER: number | null =
   CONTRACT_ID === "CAFJK3XSGBJVOPIDPKJ7CCGNCGHFZOXA75HDQ372KDJSEKXVVPQ4EVQK" ? 4853675 : null;
 
-/** Native XLM Stellar Asset Contract (payment token of the contract). */
-export const NATIVE_XLM_SAC =
-  "CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC";
-
 export const RPC_URL =
   process.env.NEXT_PUBLIC_STELLAR_RPC_URL ||
   "https://soroban-testnet.stellar.org";
@@ -27,7 +23,6 @@ export const HORIZON_URL =
 
 export const EXPLORER_URL = `https://stellar.expert/explorer/testnet/contract/${CONTRACT_ID}`;
 export const LEDGER_EXPLORER_URL = `https://stellar.expert/explorer/testnet/contract/${CONTRACT_ID}`;
-export const HOLDER_EXPLORER_URL = EXPLORER_URL;
 export const TX_EXPLORER = (hash: string) =>
   `https://stellar.expert/explorer/testnet/tx/${hash}`;
 export const HOLDER_EXPLORER = (address: string) =>
@@ -35,7 +30,7 @@ export const HOLDER_EXPLORER = (address: string) =>
 
 /** Evidence of the full on-chain cycle run against this contract. */
 export const ONCHAIN_CYCLE_DOC_URL =
-  "https://github.com/ECOMAM/stellar-energy-assets/blob/integracion/niko-sun/docs/ciclo-onchain-testnet.md";
+  "https://github.com/ECOMAM/stellar-energy-assets/blob/main/docs/ciclo-onchain-testnet.md";
 
 /**
  * Accounts approved as participants (simulated KYC) in the demo cycle.

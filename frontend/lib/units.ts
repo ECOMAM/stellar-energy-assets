@@ -32,6 +32,19 @@ export function toBigInt(value: StroopsLike): bigint {
 }
 
 /**
+ * Lenient toBigInt for values decoded from the contract or its events:
+ * `fallback` when the value is missing or not an integer.
+ */
+export function toBigIntOr<F extends bigint | null>(value: unknown, fallback: F): bigint | F {
+  if (value === undefined || value === null) return fallback;
+  try {
+    return toBigInt(value as StroopsLike);
+  } catch {
+    return fallback;
+  }
+}
+
+/**
  * XLM -> stroops. Accepts a decimal string ("10", "0.5", "1.2345678"), a
  * number (converted through toFixed(7)) or a bigint of whole XLM.
  * Throws on negatives, on more than 7 decimals and on malformed input: an

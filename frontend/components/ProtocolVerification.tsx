@@ -41,7 +41,7 @@ export default function ProtocolVerification({
     return () => clearInterval(id);
   }, []);
 
-  // v2 admin and global pause, read-only (get_admin, is_paused).
+  // v2.1 admin and global pause, read-only (get_admin, is_paused).
   useEffect(() => {
     let cancelled = false;
     readContractNative<string>("get_admin")
@@ -82,7 +82,7 @@ export default function ProtocolVerification({
             Protocol Status
           </h3>
           <span className="font-mono text-[11px] px-2 py-1 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-700 font-semibold">
-            Stellar Testnet · contrato v2
+            Stellar Testnet · contrato v2.1
           </span>
         </div>
 
@@ -93,7 +93,7 @@ export default function ProtocolVerification({
               icon="contract"
               color="text-emerald-600"
               label="Soroban contract"
-              value="Deployed (v2)"
+              value="Deployed (v2.1)"
               href={EXPLORER_URL}
               hrefLabel="View Contract →"
               title={CONTRACT_ID}

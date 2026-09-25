@@ -3,22 +3,19 @@
 import { useState, useCallback, useEffect } from "react";
 import { useWallet } from "@/lib/WalletContext";
 import { CONTRACT_ID, TX_EXPLORER, EXPLORER_URL } from "@/lib/contract";
-import {
-  describeContractError,
-  describeTxError,
-  parseContractErrorCode,
-  errorText,
-} from "@/lib/contractErrors";
+import { describeTxError, parseContractErrorCode, errorText, txHashOf } from "@/lib/contractErrors";
 import { fetchDepositHistory, type DepositEvent } from "@/lib/events";
 import { getProjectMeta } from "@/lib/projectMeta";
 import { fetchOnChainProject, soldPercent, type OnChainProject } from "@/lib/projects";
+import { clearReadCache } from "@/lib/readCache";
 import { readContractNative } from "@/lib/soroban";
 import {
   checkPurchase,
   fetchSpendableStroops,
+  parseParticipationCount,
   remainingSupply,
-  supplyAllows,
   FEE_MARGIN_STROOPS,
+  INVALID_COUNT_MESSAGE,
 } from "@/lib/purchaseChecks";
 import { formatXlm, stroopsToXlmNumber, toBigInt, type StroopsLike } from "@/lib/units";
 import { useComplianceStatus } from "@/hooks/useComplianceStatus";
@@ -70,8 +67,8 @@ export default function ProjectDetailClient({ id }: { id?: string }) {
   const projectId = Number(id) > 0 ? Math.floor(Number(id)) : 1;
   const meta = getProjectMeta(projectId);
 
-  /* ── Purchase calculator state ── */
-  const [tokenCount, setTokenCount] = useState<number>(1);
+  /* ── Purchase calculator state: the raw input, validated before any BigInt ── */
+  const [countInput, setCountInput] = useState("1");
 
   /* ── Mounted guard for hydration (prevents React #418) ── */
   const [mounted, setMounted] = useState(false);
@@ -96,7 +93,7 @@ export default function ProjectDetailClient({ id }: { id?: string }) {
       return p;
     } catch (e) {
       console.warn(`get_project(${projectId}) failed, using DEMO fallback`, e);
-      setChainError(describeTxError(e, { method: "get_project" }));
+      setChainError(describeTxError(e));
       return null;
     } finally {
       setProjectLoading(false);
@@ -181,7 +178,9 @@ export default function ProjectDetailClient({ id }: { id?: string }) {
   const [telemetryTab, setTelemetryTab] = useState<"Hoy" | "7 Días" | "Este Mes" | "Histórico">("Hoy");
 
   /* ── Derived calculations (amounts in stroops, converted only for display) ── */
-  const amount = BigInt(tokenCount);
+  const parsedCount = parseParticipationCount(countInput);
+  const amount = parsedCount ?? BigInt(0);
+  const tokenCount = Number(amount);
   const totalPriceStroops = project.price * amount;
   const pricePerToken = stroopsToXlmNumber(project.price);
   const costXlm = stroopsToXlmNumber(totalPriceStroops);
@@ -198,12 +197,12 @@ export default function ProjectDetailClient({ id }: { id?: string }) {
     amount,
     spendableStroops: spendable,
   });
-  const buyDisabled = connected && (!precheck.ok || compliance.loading);
+  const buyDisabled = parsedCount === null || (connected && (!precheck.ok || compliance.loading));
 
   /* ── Handle buy: opens modal, then executes on confirm ── */
   const openSigningModal = useCallback(() => {
     if (!connected) {
-      connect();
+      connect().catch((e) => console.warn("Freighter connect failed", e));
       return;
     }
     if (!precheck.ok) return;
@@ -218,8 +217,9 @@ export default function ProjectDetailClient({ id }: { id?: string }) {
       setSigningPhase("wallet_missing");
       return;
     }
-    // Re-check right before signing with fresh on-chain state.
+    // Re-check right before signing with fresh on-chain state (bypass the read cache).
     setSigningPhase("preparing");
+    clearReadCache();
     const fresh = await loadProject();
     const freshSpendable = await fetchSpendableStroops(address).catch(() => null);
     const again = checkPurchase({
@@ -242,7 +242,10 @@ export default function ProjectDetailClient({ id }: { id?: string }) {
     try {
       // contract: purchase_tokens(buyer: Address, project_id: u64, amount: u128)
       setSigningPhase("signing");
-      const { txHash: hash } = await signAndSend(CONTRACT_ID, "purchase_tokens", [address, projectId, amount]);
+      const { txHash: hash } = await signAndSend(CONTRACT_ID, "purchase_tokens", [address, projectId, amount], {
+        onSigned: () => setSigningPhase("submitting"),
+      });
+      // signAndSend resolves only once getTransaction returned SUCCESS.
       setTxHash(hash);
       setSigningPhase("success");
       fetchBalance();
@@ -251,28 +254,16 @@ export default function ProjectDetailClient({ id }: { id?: string }) {
     } catch (err: unknown) {
       const msg = errorText(err);
       const code = parseContractErrorCode(msg);
-      if (code === 10) {
-        // #10 is InsufficientSupply in the contract AND BalanceError in the
-        // XLM SAC: re-read the supply to tell them apart.
-        const latest = await loadProject();
-        const supplyAvailable = latest ? supplyAllows(latest, amount) : undefined;
-        if (supplyAvailable === true) {
-          setSigningPhase("insufficient_balance");
-        } else {
-          setSigningError(describeContractError(10, { method: "purchase_tokens", supplyAvailable }));
-          setSigningPhase("error");
-        }
-      } else if (code !== null) {
-        setSigningError(describeContractError(code, { method: "purchase_tokens" }));
-        setSigningPhase("error");
-      } else if (/reject|cancel|declin|denied|Request closed/i.test(msg)) {
-        setSigningPhase("rejected");
-      } else if (/not installed|is not defined|window\.freighter/i.test(msg)) {
-        setSigningPhase("wallet_missing");
-      } else if (/underfunded|tx_insufficient_balance|NOT_ENOUGH_BALANCE/i.test(msg)) {
+      // Hash of a sent but failed or unconfirmed purchase, linked from the error box.
+      setTxHash(txHashOf(err) ?? "");
+      if (code === 11 || (code === null && /underfunded|txInsufficientBalance|tx_insufficient_balance|NOT_ENOUGH_BALANCE/i.test(msg))) {
         setSigningPhase("insufficient_balance");
+      } else if (code === null && /reject|cancel|declin|denied|Request closed/i.test(msg)) {
+        setSigningPhase("rejected");
+      } else if (code === null && /not installed|is not defined|window\.freighter/i.test(msg)) {
+        setSigningPhase("wallet_missing");
       } else {
-        setSigningError(describeTxError(err, { method: "purchase_tokens" }));
+        setSigningError(describeTxError(err));
         setSigningPhase("error");
       }
     }
@@ -953,26 +944,28 @@ export default function ProjectDetailClient({ id }: { id?: string }) {
                     Cantidad de participaciones
                   </label>
                   <input
-                    type="number"
-                    min={1}
-                    value={tokenCount}
-                    onChange={(e) =>
-                      setTokenCount(Math.max(1, parseInt(e.target.value) || 1))
-                    }
+                    type="text"
+                    inputMode="numeric"
+                    value={countInput}
+                    onChange={(e) => setCountInput(e.target.value)}
+                    aria-invalid={parsedCount === null}
                     className="mb-3 w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 font-mono text-[24px] font-bold text-slate-900 outline-none transition-all focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20"
                   />
+                  {parsedCount === null && (
+                    <p className="-mt-2 mb-3 text-[12px] text-red-600">{INVALID_COUNT_MESSAGE}</p>
+                  )}
                   <div className="mb-4 flex gap-2">
                     {[10, 50, 100].map((n) => (
                       <button
                         key={n}
-                        onClick={() => setTokenCount(n)}
+                        onClick={() => setCountInput(String(n))}
                         className="flex-1 rounded-lg border border-slate-200 bg-white py-1.5 text-[12px] font-semibold text-slate-600 transition-all hover:border-emerald-300 hover:bg-emerald-50 hover:text-emerald-700"
                       >
                         {n}
                       </button>
                     ))}
                     <button
-                      onClick={() => setTokenCount(Math.max(1, Number(remaining)))}
+                      onClick={() => setCountInput(remaining > BigInt(0) ? remaining.toString() : "1")}
                       title={`Supply disponible: ${remaining.toString()}`}
                       className="flex-1 rounded-lg border border-slate-200 bg-white py-1.5 text-[12px] font-semibold text-slate-600 transition-all hover:border-orange-300 hover:bg-orange-50 hover:text-orange-700"
                     >
@@ -1031,7 +1024,7 @@ export default function ProjectDetailClient({ id }: { id?: string }) {
                     </div>
                   ) : (
                     <button
-                      onClick={connect}
+                      onClick={() => connect().catch((e) => console.warn("Freighter connect failed", e))}
                       className="mb-3 flex w-full items-center justify-center gap-2 rounded-full border border-slate-200 bg-slate-50 py-2 text-[13px] font-medium text-slate-600 transition-all hover:bg-slate-100"
                     >
                       <span className="material-symbols-outlined text-[16px]">
@@ -1051,7 +1044,7 @@ export default function ProjectDetailClient({ id }: { id?: string }) {
                       </div>
                     )}
                     {precheck.blockers
-                      .filter((b) => b.code !== "paused")
+                      .filter((b) => b.code !== "paused" && !(parsedCount === null && b.code === "invalid_amount"))
                       .map((b) => (
                         <div
                           key={b.code}
@@ -1156,6 +1149,7 @@ export default function ProjectDetailClient({ id }: { id?: string }) {
         onConfirm={executeBuy}
         phase={signingPhase}
         errorMessage={signingError}
+        txHash={txHash}
         projectName={projectName}
         projectFlag={meta.flag}
         assetId={meta.asset}

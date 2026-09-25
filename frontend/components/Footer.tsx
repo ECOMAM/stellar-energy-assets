@@ -1,5 +1,7 @@
 "use client";
 
+import { EXPLORER_URL } from "@/lib/contract";
+
 export default function Footer() {
   return (
     <footer className="w-full bg-white border-t border-slate-200 pt-16 pb-8">
@@ -12,13 +14,13 @@ export default function Footer() {
                 NIKO SUN
               </span>
               <span className="px-2 py-0.5 rounded bg-emerald-100 border border-emerald-200 text-emerald-800 font-mono text-[11px] font-semibold">
-                V2.4 PROTOCOL
+                CONTRATO v2.1 · TESTNET
               </span>
             </div>
             <p className="text-[13px] text-slate-600 max-w-md leading-relaxed">
-              Descentralizando la titularidad de activos solares en América
-              Latina. Democratizamos el acceso a la energía limpia con
-              liquidación instantánea respaldada en Stellar.
+              Demo de participaciones en proyectos solares ficticios,
+              registradas on-chain en Stellar testnet, con reparto proporcional
+              de los ingresos que deposita el emisor.
             </p>
             <div className="font-mono text-[12px] text-emerald-700 font-semibold">
               Built by NIKO-SUN • Powered by Stellar Soroban
@@ -37,24 +39,28 @@ export default function Footer() {
               Proyectos Solares
             </a>
             <a
-              href="https://stellar.expert"
+              href={EXPLORER_URL}
               target="_blank"
               rel="noopener noreferrer"
               className="text-[13px] text-slate-600 hover:text-emerald-700 transition-colors"
             >
-              Stellar Explorer (Ledger)
+              Contrato en Stellar Expert
             </a>
             <a
-              href="#"
+              href="https://github.com/ECOMAM/stellar-energy-assets/blob/main/docs/ciclo-onchain-testnet.md"
+              target="_blank"
+              rel="noopener noreferrer"
               className="text-[13px] text-slate-600 hover:text-emerald-700 transition-colors"
             >
-              Oráculo IoT (roadmap)
+              Evidencia on-chain (testnet)
             </a>
             <a
-              href="#"
+              href="https://github.com/ECOMAM/stellar-energy-assets#roadmap"
+              target="_blank"
+              rel="noopener noreferrer"
               className="text-[13px] text-slate-600 hover:text-emerald-700 transition-colors"
             >
-              Calculadora de Energía
+              Roadmap (oráculo IoT, KYC, anchors)
             </a>
           </div>
 
@@ -64,34 +70,32 @@ export default function Footer() {
               Recursos & Red
             </span>
             <a
-              href="#"
+              href="https://github.com/ECOMAM/stellar-energy-assets#readme"
+              target="_blank"
+              rel="noopener noreferrer"
               className="text-[13px] text-slate-600 hover:text-orange-600 transition-colors flex items-center gap-1"
             >
-              <span>Documentación (Docs)</span>
+              <span>Documentación (README)</span>
               <span className="material-symbols-outlined text-[14px]">
                 open_in_new
               </span>
             </a>
             <a
-              href="https://github.com/FernandoMay/niko-sun-stellar"
+              href="https://github.com/ECOMAM/stellar-energy-assets"
               target="_blank"
               rel="noopener noreferrer"
               className="text-[13px] text-slate-600 hover:text-orange-600 transition-colors"
-              title="Repositorio oficial — github.com/FernandoMay/niko-sun-stellar"
+              title="Repositorio del proyecto: github.com/ECOMAM/stellar-energy-assets"
             >
-              GitHub Contracts
+              Código en GitHub
             </a>
             <a
-              href="#"
+              href="https://github.com/ECOMAM/stellar-energy-assets/blob/main/docs/security-audit.md"
+              target="_blank"
+              rel="noopener noreferrer"
               className="text-[13px] text-slate-600 hover:text-orange-600 transition-colors"
             >
-              Discord Comunitario
-            </a>
-            <a
-              href="#"
-              className="text-[13px] text-slate-600 hover:text-orange-600 transition-colors"
-            >
-              Twitter / X Protocol
+              Revisión de seguridad del contrato
             </a>
           </div>
         </div>
@@ -99,18 +103,16 @@ export default function Footer() {
         {/* Legal disclaimer */}
         <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 text-slate-600 font-mono text-[11px] leading-relaxed">
           <strong className="text-slate-900 font-semibold">
-            Aviso Legal RWA:
+            Aviso legal (demo):
           </strong>{" "}
-          Demo en Stellar testnet con activos y datos simulados. Sin fondos reales. No es una oferta de inversión ni promete retornos.{" "}
-          La adquisición de tokens representativos de infraestructura solar
-          fotovoltaica está sujeta a condiciones climáticas fluctuantes de
-          irradiación y a riesgos inherentes a la tecnología blockchain de
-          Stellar Network. La tokenización es un mecanismo de registro y
-          reparto proporcional on-chain de los ingresos operativos generados
-          por cada planta, conforme a los contratos de compraventa de energía
-          (PPA) y a los términos del contrato inteligente. Verifique la
-          legislación aplicable en su jurisdicción antes de interactuar con
-          activos tokenizados (Real-World Assets).
+          Demo en Stellar testnet con proyectos ficticios y datos simulados. Sin fondos reales. No es una oferta de inversión ni promete retornos.{" "}
+          Las participaciones son registros internos del contrato Soroban,
+          anotados on-chain y no transferibles. Cuando el emisor deposita
+          ingresos en el contrato, este los reparte en proporción a las
+          participaciones y cada participante reclama su parte. No existen
+          contratos de compraventa de energía ni acuerdos legales detrás de
+          estos proyectos, y las participaciones no otorgan derechos sobre
+          ningún activo real.
         </div>
       </div>
     </footer>

@@ -92,9 +92,9 @@ export default function Hero() {
                 <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-600" />
               </span>
               <span className="font-mono text-[11px] tracking-wider text-slate-700 font-semibold uppercase">
-                Built on Stellar <span className="text-slate-400">/</span> 5s
-                settlement <span className="text-slate-400">/</span>{" "}
-                &lt; 0.1 XLM/txn (testnet)
+                Built on Stellar <span className="text-slate-400">/</span> Soroban
+                testnet <span className="text-slate-400">/</span>{" "}
+                fees de centavos de XLM
               </span>
             </div>
 
@@ -165,7 +165,7 @@ export default function Hero() {
             {/* Trust indicators */}
             <div className="pt-2 flex items-center gap-6 text-slate-500 font-mono text-[12px]">
               <a
-                href="https://github.com/ECOMAM/stellar-energy-assets/blob/integracion/niko-sun/docs/security-audit.md"
+                href="https://github.com/ECOMAM/stellar-energy-assets/blob/main/docs/security-audit.md"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="flex items-center gap-2 hover:text-emerald-700"

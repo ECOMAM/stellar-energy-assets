@@ -6,6 +6,7 @@ import {
   stroopsToXlm,
   formatXlm,
   toBigInt,
+  toBigIntOr,
 } from "@/lib/units";
 
 // ═══════════════════════════════════════════════════════════
@@ -109,5 +110,20 @@ describe("toBigInt", () => {
     expect(toBigInt("5")).toBe(5n);
     expect(() => toBigInt(1.5)).toThrow(RangeError);
     expect(() => toBigInt("1.5")).toThrow(RangeError);
+  });
+});
+
+describe("toBigIntOr (the shared lenient helper for decoded values)", () => {
+  it("returns the fallback for missing or non-integer values", () => {
+    expect(toBigIntOr(undefined, 0n)).toBe(0n);
+    expect(toBigIntOr(null, null)).toBeNull();
+    expect(toBigIntOr(1.5, 0n)).toBe(0n);
+    expect(toBigIntOr("abc", null)).toBeNull();
+  });
+
+  it("converts bigint, safe integers and digit strings", () => {
+    expect(toBigIntOr(7n, null)).toBe(7n);
+    expect(toBigIntOr(5, 0n)).toBe(5n);
+    expect(toBigIntOr("12", null)).toBe(12n);
   });
 });

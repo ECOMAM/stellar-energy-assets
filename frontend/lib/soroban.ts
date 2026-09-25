@@ -1,22 +1,24 @@
 /**
- * Soroban argument encoding for the NIKO SUN v2 contract.
+ * Soroban argument encoding and read-only calls for the NIKO SUN v2.1 contract.
  *
  * Every public function of contracts/niko_project/src/lib.rs is listed with
  * its exact parameter types, so each call site is encoded by signature
  * (u64 project ids, u128 amounts, Address, bool, String) instead of guessing
  * from the JS value. An unknown method or a wrong arity throws before
- * anything reaches the network. There is no `initialize`: the v2 contract is
- * configured by its constructor at deploy time.
+ * anything reaches the network. There is no `initialize`: the contract is
+ * configured by its constructor at deploy time. Reads go through the shared
+ * promise cache of lib/readCache.ts.
  */
 
 import type * as StellarSdk from "@stellar/stellar-sdk";
 import { CONTRACT_ID, NETWORK_PASSPHRASE, RPC_URL } from "./contract";
+import { cachedRead, readKey } from "./readCache";
 
 type Sdk = typeof StellarSdk;
 
 export type ScArgType = "address" | "u64" | "u128" | "bool" | "string" | "vec_u64";
 
-/** Parameter types of every v2 pub fn (the `env` parameter excluded). */
+/** Parameter types of every v2.1 pub fn (the `env` parameter excluded). */
 export const CONTRACT_SIGNATURES = {
   set_admin: ["address", "address"],
   set_paused: ["address", "bool"],
@@ -94,7 +96,7 @@ function encodeArg(sdk: Sdk, type: ScArgType, value: unknown, label: string): St
 /** Encode `args` for `method` according to CONTRACT_SIGNATURES. */
 export function encodeContractArgs(sdk: Sdk, method: string, args: readonly unknown[]): StellarSdk.xdr.ScVal[] {
   if (!isContractMethod(method)) {
-    throw new Error(`"${method}" no es una función del contrato v2`);
+    throw new Error(`"${method}" no es una función del contrato v2.1`);
   }
   const spec: readonly ScArgType[] = CONTRACT_SIGNATURES[method];
   if (spec.length !== args.length) {
@@ -129,9 +131,15 @@ export async function simulateContractCall(
   return sim.result?.retval;
 }
 
-/** Read-only call decoded with scValToNative (u64/u128 -> bigint, Address -> string). */
-export async function readContractNative<T = unknown>(method: string, args: readonly unknown[] = []): Promise<T> {
-  const sdk = await import("@stellar/stellar-sdk");
-  const retval = await simulateContractCall(method, args);
-  return (retval === undefined ? undefined : sdk.scValToNative(retval)) as T;
+/**
+ * Read-only call decoded with scValToNative (u64/u128 -> bigint, Address ->
+ * string). Identical reads share one simulation (lib/readCache.ts); treat the
+ * result as read-only.
+ */
+export function readContractNative<T = unknown>(method: string, args: readonly unknown[] = []): Promise<T> {
+  return cachedRead(readKey("simulate", method, args), async () => {
+    const sdk = await import("@stellar/stellar-sdk");
+    const retval = await simulateContractCall(method, args);
+    return (retval === undefined ? undefined : sdk.scValToNative(retval)) as T;
+  });
 }
