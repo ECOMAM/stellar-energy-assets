@@ -61,7 +61,8 @@ const TOTAL_SALES: Symbol = symbol_short!("T_SALES");
 enum DataKey {
     /// The `Project` record.
     Project(u64),
-    /// The project name (1 to `MAX_NAME_LEN` bytes).
+    /// The project name (1 to `MAX_NAME_LEN` bytes). Its TTL moves with the
+    /// project's (`extend_project_ttl`).
     Name(u64),
     /// Sales proceeds the creator has not withdrawn yet (stroops).
     Sales(u64),
@@ -413,7 +414,7 @@ fn collect_payment(env: &Env, payer: &Address, amount: i128) {
 
 /// Load a project (`ProjectNotFound` if it does not exist). Read-only: a
 /// mutating function either writes it back with `save_project` or extends
-/// its TTL with `extend_persistent_ttl`.
+/// its TTL with `extend_project_ttl`.
 fn load_project(env: &Env, project_id: u64) -> Project {
     env.storage()
         .persistent()
@@ -421,9 +422,25 @@ fn load_project(env: &Env, project_id: u64) -> Project {
         .unwrap_or_else(|| panic_with_error!(env, Error::ProjectNotFound))
 }
 
-/// Write a project record (and extend its TTL).
+/// Extend the TTL of a project's `Project` record and of its `Name`, which
+/// always move together: every mutating function that writes the project,
+/// or reads it, keeps its name alive as well. `create_project` writes the
+/// name, so it always exists; if it is missing anyway, it is skipped rather
+/// than failing the call.
+fn extend_project_ttl(env: &Env, project_id: u64) {
+    extend_persistent_ttl(env, &DataKey::Project(project_id));
+    let name = DataKey::Name(project_id);
+    if env.storage().persistent().has(&name) {
+        extend_persistent_ttl(env, &name);
+    }
+}
+
+/// Write a project record and extend its TTL, together with its name's.
 fn save_project(env: &Env, project_id: u64, project: &Project) {
-    write_persistent(env, &DataKey::Project(project_id), project);
+    env.storage()
+        .persistent()
+        .set(&DataKey::Project(project_id), project);
+    extend_project_ttl(env, project_id);
 }
 
 fn require_creator(env: &Env, project: &Project, caller: &Address) {
@@ -916,8 +933,9 @@ impl NikoProject {
 
         let payout = to_token_amount(&env, earned, Error::Overflow);
 
-        // Entries this claim only reads: keep them alive as well.
-        extend_persistent_ttl(&env, &DataKey::Project(project_id));
+        // Entries this claim only reads: keep them (and the project's name)
+        // alive as well.
+        extend_project_ttl(&env, project_id);
         if balance.is_some() {
             extend_persistent_ttl(&env, &balance_key);
         }
@@ -975,8 +993,9 @@ impl NikoProject {
             panic_with_error!(&env, Error::InsufficientBalance);
         }
 
-        // The project entry is only read here: keep it alive as well.
-        extend_persistent_ttl(&env, &DataKey::Project(project_id));
+        // The project entry is only read here: keep it (and its name) alive
+        // as well.
+        extend_project_ttl(&env, project_id);
         write_persistent(&env, &sales_key, &sub_or_overflow(&env, balance, amount));
 
         let total_sales: u128 = env
@@ -1093,8 +1112,18 @@ impl NikoProject {
     // ========================================
 
     /// Transfer project ownership (creator only) to another verified issuer.
+    /// Both parties sign: `caller`, the current creator, and `new_creator`,
+    /// who accepts the project.
     pub fn transfer_ownership(env: Env, caller: Address, project_id: u64, new_creator: Address) {
         caller.require_auth();
+        // The new creator must consent as well: nobody can be handed a
+        // project, and an entry in its project list, without signing for
+        // it. A transfer to oneself is already covered by the signature
+        // above; asking again would make the host look for a second,
+        // separate authorization from the same account in this call.
+        if new_creator != caller {
+            new_creator.require_auth();
+        }
 
         let mut project = load_project(&env, project_id);
         require_creator(&env, &project, &caller);
@@ -1159,7 +1188,7 @@ mod test {
         testutils::{
             storage::{Instance as _, Persistent as _},
             Address as _, AuthorizedFunction, AuthorizedInvocation, EnvTestConfig, Events as _,
-            Ledger as _,
+            Ledger as _, MockAuth, MockAuthInvoke,
         },
         vec,
         xdr::{LedgerEntryData, Limits, ScAddress, ScErrorCode, ScErrorType, ScVal, WriteXdr},
@@ -3099,6 +3128,252 @@ mod test {
         assert_eq!(
             client.try_purchase_tokens(&buyer, &project_id, &10),
             Err(Ok(soroban_sdk::Error::from_contract_error(13)))
+        );
+    }
+
+    // ----------------------------------------
+    // v2.2: re-audit findings (H-09, H-10)
+    // ----------------------------------------
+    // These use `mock_auths`, which enforces auth with exactly the entries
+    // given (the host checks each `require_auth` against them), instead of
+    // `mock_all_auths`, which approves any `require_auth`.
+
+    /// H-10 (re-audit F-10, PoC `poc21_user_projects_crece_por_emisor`: an
+    /// issuer made 100 transfers onto another issuer's project list without
+    /// its signature). The current creator's signature alone no longer
+    /// transfers a project, and neither does the new creator's: the host
+    /// rejects the call and nothing changes.
+    #[test]
+    fn test_h10_transfer_ownership_rejected_without_new_creator_signature() {
+        let (env, admin, _token_address, client) = setup();
+        let creator = issuer(&env, &admin, &client);
+        let new_creator = issuer(&env, &admin, &client);
+        let project_id = solar_lima(&env, &client, &creator);
+        let invoke = MockAuthInvoke {
+            contract: &client.address,
+            fn_name: "transfer_ownership",
+            args: (&creator, project_id, &new_creator).into_val(&env),
+            sub_invokes: &[],
+        };
+
+        // Only the current creator signs (enough in v2.1).
+        assert_auth_rejected(
+            client
+                .mock_auths(&[MockAuth {
+                    address: &creator,
+                    invoke: &invoke,
+                }])
+                .try_transfer_ownership(&creator, &project_id, &new_creator),
+        );
+        // Only the new creator signs.
+        assert_auth_rejected(
+            client
+                .mock_auths(&[MockAuth {
+                    address: &new_creator,
+                    invoke: &invoke,
+                }])
+                .try_transfer_ownership(&creator, &project_id, &new_creator),
+        );
+
+        // Nothing changed.
+        assert_eq!(client.get_project(&project_id).creator, creator);
+        assert_eq!(client.get_user_projects(&creator), vec![&env, project_id]);
+        assert_eq!(client.get_user_projects(&new_creator).len(), 0);
+    }
+
+    /// H-10: with both signatures the transfer goes through under enforced
+    /// auth, the host authorized that exact call for both parties, and the
+    /// new creator runs the project (deposit and withdrawal) while the
+    /// previous creator no longer can.
+    #[test]
+    fn test_h10_transfer_ownership_with_both_signatures() {
+        let (env, admin, token_address, client) = setup();
+        let token_client = token::TokenClient::new(&env, &token_address);
+        let creator = issuer(&env, &admin, &client);
+        let new_creator = issuer(&env, &admin, &client);
+        let buyer = participant(&env, &admin, &client);
+        mint(&env, &token_address, &buyer, 1_000_000);
+        mint(&env, &token_address, &new_creator, 1_000_000);
+        let project_id = solar_lima(&env, &client, &creator);
+        client.purchase_tokens(&buyer, &project_id, &100);
+
+        let args: Vec<Val> = (&creator, project_id, &new_creator).into_val(&env);
+        let invoke = MockAuthInvoke {
+            contract: &client.address,
+            fn_name: "transfer_ownership",
+            args: args.clone(),
+            sub_invokes: &[],
+        };
+        client
+            .mock_auths(&[
+                MockAuth {
+                    address: &creator,
+                    invoke: &invoke,
+                },
+                MockAuth {
+                    address: &new_creator,
+                    invoke: &invoke,
+                },
+            ])
+            .transfer_ownership(&creator, &project_id, &new_creator);
+
+        let transfer = AuthorizedInvocation {
+            function: AuthorizedFunction::Contract((
+                client.address.clone(),
+                Symbol::new(&env, "transfer_ownership"),
+                args,
+            )),
+            sub_invocations: std::vec![],
+        };
+        assert_eq!(
+            env.auths(),
+            std::vec![
+                (creator.clone(), transfer.clone()),
+                (new_creator.clone(), transfer)
+            ]
+        );
+        assert_eq!(client.get_project(&project_id).creator, new_creator);
+        assert_eq!(client.get_user_projects(&creator).len(), 0);
+        assert_eq!(
+            client.get_user_projects(&new_creator),
+            vec![&env, project_id]
+        );
+
+        // The new creator deposits revenue and withdraws the sales.
+        client.deposit_revenue(&new_creator, &project_id, &5_000, &0);
+        assert_eq!(client.get_claimable(&buyer, &project_id), 5_000);
+        let before = token_client.balance(&new_creator);
+        client.withdraw_sales(&new_creator, &project_id, &10_000);
+        assert_eq!(token_client.balance(&new_creator), before + 10_000);
+        assert_eq!(client.get_sales_balance(&project_id), 0);
+
+        // The previous creator lost control of the project.
+        assert_eq!(
+            client.try_deposit_revenue(&creator, &project_id, &1_000, &0),
+            Err(Ok(err(Error::NotCreator)))
+        );
+        assert_eq!(
+            client.try_withdraw_sales(&creator, &project_id, &1),
+            Err(Ok(err(Error::NotCreator)))
+        );
+    }
+
+    /// H-10: a transfer to oneself (allowed in v2.1: it moves the id to the
+    /// end of the creator's list) still takes a single signature, because
+    /// the creator is both parties.
+    #[test]
+    fn test_h10_self_transfer_needs_one_signature() {
+        let (env, admin, _token_address, client) = setup();
+        let id = client.address.clone();
+        let creator = issuer(&env, &admin, &client);
+        let first = solar_lima(&env, &client, &creator);
+        let second = solar_lima(&env, &client, &creator);
+
+        client
+            .mock_auths(&[MockAuth {
+                address: &creator,
+                invoke: &MockAuthInvoke {
+                    contract: &id,
+                    fn_name: "transfer_ownership",
+                    args: (&creator, first, &creator).into_val(&env),
+                    sub_invokes: &[],
+                },
+            }])
+            .transfer_ownership(&creator, &first, &creator);
+        assert_eq!(
+            env.events().all().filter_by_contract(&id),
+            [OwnershipTransferred {
+                project_id: first,
+                new_creator: creator.clone()
+            }
+            .to_xdr(&env, &id)]
+        );
+        assert_eq!(client.get_project(&first).creator, creator);
+        assert_eq!(
+            client.get_user_projects(&creator),
+            vec![&env, second, first]
+        );
+    }
+
+    /// H-09 (re-audit F-09, PoC `poc21_name_no_renueva_ttl`: every mutation
+    /// renewed `Project` while `Name` kept its creation TTL, so an active
+    /// project's name was archived ~31 days after creation). `Name` now
+    /// moves with `Project`: every mutation that writes the project, or reads
+    /// it, extends the name back to PERSISTENT_TTL_EXTEND_TO. Before each
+    /// call the ledger is aged so both are below the threshold. The name of a
+    /// second project that no call touches keeps aging.
+    #[test]
+    fn test_h09_name_ttl_extended_with_project() {
+        let (env, admin, token_address, client) = setup();
+        let ttl = |key: &DataKey| {
+            env.as_contract(&client.address, || env.storage().persistent().get_ttl(key))
+        };
+        let buyer = participant(&env, &admin, &client);
+        mint(&env, &token_address, &buyer, 1_000_000);
+        mint(&env, &token_address, &admin, 1_000_000);
+        let project_id = solar_lima(&env, &client, &admin);
+        let untouched_id = solar_lima(&env, &client, &admin);
+        let project = DataKey::Project(project_id);
+        let name = DataKey::Name(project_id);
+        let untouched_name = DataKey::Name(untouched_id);
+        assert_eq!(ttl(&name), PERSISTENT_TTL_EXTEND_TO);
+
+        let aged_mutation = |mutation: &str, call: &dyn Fn()| {
+            env.ledger()
+                .set_sequence_number(env.ledger().sequence() + 20_000);
+            assert!(ttl(&project) < PERSISTENT_TTL_THRESHOLD, "{mutation}");
+            assert!(ttl(&name) < PERSISTENT_TTL_THRESHOLD, "{mutation}");
+            call();
+            assert_eq!(ttl(&project), PERSISTENT_TTL_EXTEND_TO, "{mutation}");
+            assert_eq!(ttl(&name), PERSISTENT_TTL_EXTEND_TO, "{mutation}");
+            assert!(
+                ttl(&untouched_name) < PERSISTENT_TTL_THRESHOLD,
+                "{mutation}"
+            );
+        };
+
+        // Mutations that write the project.
+        aged_mutation("purchase_tokens", &|| {
+            client.purchase_tokens(&buyer, &project_id, &100)
+        });
+        aged_mutation("deposit_revenue", &|| {
+            client.deposit_revenue(&admin, &project_id, &10_000, &5)
+        });
+        aged_mutation("update_energy", &|| {
+            client.update_energy(&admin, &project_id, &10)
+        });
+        // Mutations that only read it.
+        aged_mutation("claim_revenue", &|| {
+            assert_eq!(client.claim_revenue(&buyer, &project_id), 10_000);
+        });
+        aged_mutation("withdraw_sales", &|| {
+            client.withdraw_sales(&admin, &project_id, &1_000)
+        });
+        // Back to writes.
+        aged_mutation("set_project_status", &|| {
+            client.set_project_status(&admin, &project_id, &false)
+        });
+        let other = issuer(&env, &admin, &client);
+        aged_mutation("transfer_ownership", &|| {
+            client.transfer_ownership(&admin, &project_id, &other)
+        });
+
+        // The transfer read both creators' project lists and wrote them back,
+        // so both were extended too. The previous creator still has the
+        // untouched project, whose list was last written before any aging.
+        assert_eq!(
+            ttl(&DataKey::UserProjects(admin.clone())),
+            PERSISTENT_TTL_EXTEND_TO
+        );
+        assert_eq!(client.get_user_projects(&admin), vec![&env, untouched_id]);
+        assert_eq!(
+            ttl(&DataKey::UserProjects(other.clone())),
+            PERSISTENT_TTL_EXTEND_TO
+        );
+
+        assert_eq!(
+            client.get_project_name(&project_id),
+            String::from_str(&env, "Solar Lima")
         );
     }
 }
