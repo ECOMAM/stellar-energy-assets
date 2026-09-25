@@ -5,7 +5,7 @@ import { useWallet } from "@/lib/WalletContext";
 import WalletModal from "./WalletModal";
 
 export default function Header() {
-  const { address, connected, connecting, connect, disconnect, balance } =
+  const { address, connected, connecting, connect, disconnect, balance, accountChangeNotice, networkWarning } =
     useWallet();
   const [modalOpen, setModalOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
@@ -140,6 +140,22 @@ export default function Header() {
             )}
           </div>
         </div>
+
+        {/* Unobtrusive notice: Freighter account switched, or wrong network. Auto-clears itself
+            (accountChangeNotice) or stays until back on testnet (networkWarning). */}
+        {mounted && (networkWarning || accountChangeNotice) && (
+          <div className="absolute top-full right-5 mt-2 max-w-xs">
+            {networkWarning ? (
+              <p className="px-3 py-1.5 rounded-lg bg-amber-50 border border-amber-300 text-amber-800 text-[11px] font-medium shadow-sm">
+                {networkWarning}
+              </p>
+            ) : (
+              <p className="px-3 py-1.5 rounded-lg bg-emerald-50 border border-emerald-300 text-emerald-800 text-[11px] font-medium shadow-sm">
+                {accountChangeNotice}
+              </p>
+            )}
+          </div>
+        )}
       </header>
 
       <WalletModal
