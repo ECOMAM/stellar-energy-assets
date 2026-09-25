@@ -51,7 +51,7 @@ import { describeTxFailure, scErrorText, sendContractCall, type ContractCallInpu
 const SOURCE = "GBTNEHEDUS7X7MEU2RNAXLH5B52TPW44YZDQNFQMU2JPBMCXAXZ4LOUD";
 const XLM_SAC = "CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC";
 const HASH = "3f2a9c1be0d4a5f6c7b8091a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e";
-/** The branch of app/project/[id]/client.tsx that shows "Firma Rechazada". */
+/** The branch of app/project/ProjectDetailClient.tsx that shows "Firma Rechazada". */
 const REJECTED_BRANCH = /reject|cancel|declin|denied|Request closed/i;
 
 const call = (over: Partial<ContractCallInput> = {}) =>

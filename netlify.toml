@@ -6,6 +6,13 @@
 [build.environment]
   NODE_VERSION = "20"
 
+# Enlaces viejos al detalle (/project/N/) -> nueva ruta por query (/project/?id=N).
+# Va antes del fallback SPA, porque Netlify aplica la primera regla que coincide.
+[[redirects]]
+  from = "/project/:id"
+  to = "/project/?id=:id"
+  status = 301
+
 [[redirects]]
   from = "/*"
   to = "/index.html"

@@ -16,6 +16,7 @@
 
 import { CONTRACT_ID, DEMO_PARTICIPANTS } from "./contract";
 import { fetchContractEvents, type DecodedContractEvent } from "./events";
+import { fetchPortfolio, projectIdRange } from "./projects";
 import { readContractNative } from "./soroban";
 import { toBigIntOr } from "./units";
 
@@ -189,23 +190,24 @@ function writeKnownAddresses(addrs: string[]): void {
 // On-chain confirmation
 // ---------------------------------------------------------------------------
 
+/** Every on-chain project id (1..next_project_id-1), with no 12-id cap. */
 async function fetchProjectIds(): Promise<number[]> {
   const next = Number(toBigIntOr(await readContractNative("next_project_id"), BigInt(1)));
-  const ids: number[] = [];
-  for (let i = 1; i < next && ids.length < 12; i++) ids.push(i);
-  return ids;
+  return projectIdRange(next);
 }
 
-type Position = { token_balance?: unknown; claimable_amount?: unknown };
-
-/** get_portfolio(addr, ids) -> total balance and whether anything is claimable. */
+/**
+ * get_portfolio(addr, ids) -> total balance and whether anything is claimable.
+ * fetchPortfolio queries in chunks of at most 12 ids (the per-call limit) and
+ * merges them, so holders of project 13 and above are counted too.
+ */
 async function probeHolder(addr: string, ids: number[]): Promise<{ balance: bigint; claimable: boolean }> {
-  const positions = await readContractNative<Position[]>("get_portfolio", [addr, ids]);
+  const positions = await fetchPortfolio(addr, ids);
   let balance = BigInt(0);
   let claimable = false;
-  for (const p of Array.isArray(positions) ? positions : []) {
-    balance += toBigIntOr(p.token_balance, BigInt(0));
-    if (toBigIntOr(p.claimable_amount, BigInt(0)) > BigInt(0)) claimable = true;
+  for (const p of Array.from(positions.values())) {
+    balance += p.balance;
+    if (p.claimable > BigInt(0)) claimable = true;
   }
   return { balance, claimable };
 }
